@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Alfen ACE — Homey Modbus integratie
 
 Verbindt een Alfen Eve Single laadpaal (met ACE module) via Modbus TCP met Homey. Ondersteunt real-time statusmonitoring, dynamische laadbalancering op basis van een aangesloten energiemeter, en directe sturing van laadstroom en fase-instelling.
@@ -346,3 +347,7 @@ alfen-ace/
         └── pair/
             └── device.html
 ```
+=======
+# Alfen-ProlineSingle
+Alfen EV charger modbus
+>>>>>>> e4ae784d852159f99f17a8c63222ffd122dbcb41
