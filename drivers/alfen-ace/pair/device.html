@@ -2,6 +2,7 @@
 
   Homey.setTitle(Homey.__('pair.title'));
 
+  // Restore previously entered values if user navigates back
   Homey.emit('getSettings').then(function (settings) {
     if (settings) {
       document.getElementById('ip').value   = settings.ip   || '';
@@ -11,10 +12,30 @@
 
   function settingsChanged() {
     const value = {
-      ip:   document.getElementById('ip').value,
+      ip:   document.getElementById('ip').value.trim(),
       port: document.getElementById('port').value,
     };
     Homey.emit('settingsChanged', value);
+    // Enable Next button only when IP is filled in
+    document.getElementById('btn-next').disabled = !value.ip;
+  }
+
+  function onNext() {
+    const ip   = document.getElementById('ip').value.trim();
+    const port = document.getElementById('port').value;
+
+    if (!ip) {
+      Homey.alert(Homey.__('errors.ip_required'));
+      return;
+    }
+    if (!port || isNaN(Number(port))) {
+      Homey.alert(Homey.__('errors.port_required'));
+      return;
+    }
+
+    Homey.emit('settingsChanged', { ip, port }).then(function () {
+      Homey.nextView();
+    });
   }
 
 </script>
@@ -28,17 +49,42 @@
     <label for="ip" class="homey-form-label">
       <span data-i18n="pair.ip"></span>
     </label>
-    <input id="ip" class="homey-form-input" type="text" placeholder="192.168.1.100" oninput="settingsChanged()" />
+    <input
+      id="ip"
+      class="homey-form-input"
+      type="text"
+      placeholder="192.168.1.100"
+      oninput="settingsChanged()"
+    />
   </div>
 
   <div class="homey-form-group">
     <label for="port" class="homey-form-label">
       <span data-i18n="pair.port"></span>
     </label>
-    <input id="port" class="homey-form-input" type="number" value="502" oninput="settingsChanged()" />
+    <input
+      id="port"
+      class="homey-form-input"
+      type="number"
+      value="502"
+      min="1"
+      max="65535"
+      oninput="settingsChanged()"
+    />
   </div>
 
-  <p style="font-size:0.85em; color:#888; margin-top:12px;">
+  <p style="font-size:0.85em; color:#888; margin-top:8px;">
     <span data-i18n="pair.note"></span>
   </p>
 </fieldset>
+
+<div style="margin-top:24px; text-align:right;">
+  <button
+    id="btn-next"
+    class="homey-button-primary"
+    onclick="onNext()"
+    disabled
+  >
+    <span data-i18n="pair.next"></span>
+  </button>
+</div>

@@ -5,7 +5,8 @@
     "ip": "IP-adres:",
     "port": "Modbus TCP poort:",
     "device_name": "Alfen ACE Lader",
-    "note": "Zorg dat Modbus TCP is ingeschakeld in de ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Poort 502, unit-adressen 1 (socket) en 200 (station) worden automatisch gebruikt."
+    "note": "Zorg dat Modbus TCP is ingeschakeld in de ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Poort 502, unit-adressen 1 (socket) en 200 (station) worden automatisch gebruikt.",
+    "next": "Volgende"
   },
   "device": {
     "connecting": "Verbinding maken met lader\u2026",

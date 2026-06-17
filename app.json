@@ -2,14 +2,15 @@
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "Alfen.ProlineSingle",
   "version": "1.0.0",
-  "compatibility": ">=12.4.0",
+  "compatibility": ">=12.4.5",
   "sdk": 3,
   "runtime": "nodejs",
   "platforms": [
     "local"
   ],
   "name": {
-    "en": "alfen-ace"
+    "en": "Alfen Eve Single / ACE EV Charger",
+    "nl": "Alfen Eve Single / ACE Laadpaal"
   },
   "description": {
     "en": "manage your ev charger"
@@ -17,7 +18,9 @@
   "category": [
     "energy"
   ],
-  "permissions": [],
+  "permissions": [
+    "homey:manager:api"
+  ],
   "images": {
     "small": "/assets/images/small.png",
     "large": "/assets/images/large.png",
@@ -27,6 +30,7 @@
     "name": "Familie van Barneveld",
     "email": "hj.vanbarne@gmail.com"
   },
+  "brandColor": "#1A73E8",
   "flow": {
     "triggers": [
       {
@@ -374,12 +378,14 @@
       ],
       "energy": {
         "evCharger": true,
-        "cumulative": true,
-        "cumulativeImportedCapability": "meter_power"
+        "meterPowerImportedCapability": "meter_power"
       },
       "pair": [
         {
-          "id": "device"
+          "id": "device",
+          "navigation": {
+            "next": "list_devices"
+          }
         },
         {
           "id": "list_devices",
@@ -475,6 +481,10 @@
             "nl": "Stroom L3"
           }
         }
+      },
+      "images": {
+        "small": "/drivers/alfen-ace/assets/small.png",
+        "large": "/drivers/alfen-ace/assets/large.png"
       },
       "id": "alfen-ace"
     }

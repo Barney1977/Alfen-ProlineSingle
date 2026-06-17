@@ -12,12 +12,14 @@
   ],
   "energy": {
     "evCharger": true,
-    "cumulative": true,
-    "cumulativeImportedCapability": "meter_power"
+    "meterPowerImportedCapability": "meter_power"
   },
   "pair": [
     {
-      "id": "device"
+      "id": "device",
+      "navigation": {
+        "next": "list_devices"
+      }
     },
     {
       "id": "list_devices",
@@ -113,5 +115,9 @@
         "nl": "Stroom L3"
       }
     }
+  },
+  "images": {
+    "small": "/drivers/alfen-ace/assets/small.png",
+    "large": "/drivers/alfen-ace/assets/large.png"
   }
 }

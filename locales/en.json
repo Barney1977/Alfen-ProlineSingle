@@ -5,7 +5,8 @@
     "ip": "IP address:",
     "port": "Modbus TCP port:",
     "device_name": "Alfen ACE Charger",
-    "note": "Make sure Modbus TCP is enabled in the ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Port 502, unit addresses 1 (socket) and 200 (station) are used automatically."
+    "note": "Make sure Modbus TCP is enabled in the ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Port 502, unit addresses 1 (socket) and 200 (station) are used automatically.",
+    "next": "Next"
   },
   "device": {
     "connecting": "Connecting to charger\u2026",

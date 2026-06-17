@@ -19,6 +19,7 @@ const UNIT_SOCKET1 =   1;
 
 // ─── Register addresses (datasheet − 1) ──────────────────────────────────────
 const REG_STATION_MAX_CURRENT = 1099;
+const REG_AVAILABILITY        = 1199; // 1200 UNSIGNED16
 const REG_MODE3_STATE         = 1200;
 const REG_ACTUAL_MAX_A        = 1205;
 const REG_VALID_TIME_LEFT     = 1207;
