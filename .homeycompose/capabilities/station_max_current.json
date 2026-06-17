@@ -1,0 +1,21 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Station max current",
+    "nl": "Station max stroom"
+  },
+  "desc": {
+    "en": "Station-wide active maximum current (from unit 200)",
+    "nl": "Stationsbreed actieve maximale stroom (van unit 200)"
+  },
+  "units": {
+    "en": "A",
+    "nl": "A"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "chartType": "stepLine",
+  "uiComponent": "sensor"
+}

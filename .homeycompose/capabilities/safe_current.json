@@ -1,0 +1,20 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Safe current (fallback)",
+    "nl": "Veilige stroom (fallback)"
+  },
+  "desc": {
+    "en": "Fallback safe current used when Modbus validity time expires",
+    "nl": "Fallback veilige stroom als de Modbus geldigheidstijd verloopt"
+  },
+  "units": {
+    "en": "A",
+    "nl": "A"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

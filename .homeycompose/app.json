@@ -1,0 +1,29 @@
+{
+  "id": "Alfen.ProlineSingle",
+  "version": "1.0.0",
+  "compatibility": ">=12.4.0",
+  "sdk": 3,
+  "runtime": "nodejs",
+  "platforms": [
+    "local"
+  ],
+  "name": {
+    "en": "alfen-ace"
+  },
+  "description": {
+    "en": "manage your ev charger"
+  },
+  "category": [
+    "energy"
+  ],
+  "permissions": [],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Familie van Barneveld",
+    "email": "hj.vanbarne@gmail.com"
+  }
+}

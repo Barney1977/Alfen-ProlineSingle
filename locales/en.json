@@ -1,0 +1,32 @@
+{
+  "pair": {
+    "title": "Connect Alfen ACE Charger",
+    "connection_settings": "Connection settings",
+    "ip": "IP address:",
+    "port": "Modbus TCP port:",
+    "device_name": "Alfen ACE Charger",
+    "note": "Make sure Modbus TCP is enabled in the ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Port 502, unit addresses 1 (socket) and 200 (station) are used automatically."
+  },
+  "device": {
+    "connecting": "Connecting to charger\u2026",
+    "connected": "Connected",
+    "disconnected": "Disconnected \u2014 reconnecting",
+    "charging_paused": "Charging paused (3 A)",
+    "charging_resumed": "Charging resumed"
+  },
+  "errors": {
+    "ip_required": "IP address is required",
+    "port_required": "Port must be a valid number",
+    "not_connected": "Not connected to charger"
+  },
+  "warnings": {
+    "lb_interval_too_high": "Load balancing interval is equal to or greater than the Alfen validity time (60 s). The charger may fall back to safe current.",
+    "meter_device_not_found": "Energy meter device not found. Check the device ID in settings.",
+    "meter_capability_missing": "Energy meter device does not expose measure_current.L1/L2/L3. Load balancing inactive.",
+    "meter_data_stale": "Energy meter data is stale \u2014 no update received within expected interval. Charge current reduced to 6 A safe minimum.",
+    "meter_waiting_for_data": "Meter device found but no measurements received yet. Check that the energy meter is online and reporting values."
+  },
+  "notifications": {
+    "pause_cleared_by_slider": "Charging pause cleared \u2014 charge current manually set to {amps} A."
+  }
+}

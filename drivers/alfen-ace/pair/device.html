@@ -1,0 +1,44 @@
+<script type="application/javascript">
+
+  Homey.setTitle(Homey.__('pair.title'));
+
+  Homey.emit('getSettings').then(function (settings) {
+    if (settings) {
+      document.getElementById('ip').value   = settings.ip   || '';
+      document.getElementById('port').value = settings.port || 502;
+    }
+  });
+
+  function settingsChanged() {
+    const value = {
+      ip:   document.getElementById('ip').value,
+      port: document.getElementById('port').value,
+    };
+    Homey.emit('settingsChanged', value);
+  }
+
+</script>
+
+<fieldset class="homey-form-fieldset">
+  <legend class="homey-form-legend">
+    <span data-i18n="pair.connection_settings"></span>
+  </legend>
+
+  <div class="homey-form-group">
+    <label for="ip" class="homey-form-label">
+      <span data-i18n="pair.ip"></span>
+    </label>
+    <input id="ip" class="homey-form-input" type="text" placeholder="192.168.1.100" oninput="settingsChanged()" />
+  </div>
+
+  <div class="homey-form-group">
+    <label for="port" class="homey-form-label">
+      <span data-i18n="pair.port"></span>
+    </label>
+    <input id="port" class="homey-form-input" type="number" value="502" oninput="settingsChanged()" />
+  </div>
+
+  <p style="font-size:0.85em; color:#888; margin-top:12px;">
+    <span data-i18n="pair.note"></span>
+  </p>
+</fieldset>

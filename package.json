@@ -1,0 +1,13 @@
+{
+  "name": "alfen-ace-charger",
+  "version": "1.0.0",
+  "main": "app.js",
+  "dependencies": {
+    "homey-api": "^3.19.1",
+    "jsmodbus": "^4.0.6"
+  },
+  "devDependencies": {
+    "homey": "^4.3.0",
+    "homey-lib": "^2.50.3"
+  }
+}

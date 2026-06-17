@@ -1,0 +1,21 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Actual applied max current",
+    "nl": "Werkelijke max stroom"
+  },
+  "desc": {
+    "en": "The actual maximum current applied to the socket",
+    "nl": "De werkelijk toegepaste maximale laadstroom"
+  },
+  "units": {
+    "en": "A",
+    "nl": "A"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "chartType": "stepLine",
+  "uiComponent": "sensor"
+}

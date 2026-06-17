@@ -1,0 +1,15 @@
+{
+  "type": "string",
+  "title": {
+    "en": "Mode 3 state (IEC 61851)",
+    "nl": "Mode 3 status (IEC 61851)"
+  },
+  "desc": {
+    "en": "IEC 61851 charging state: A=no vehicle, B=vehicle connected, C=charging, E/F=error",
+    "nl": "IEC 61851 laadstatus: A=geen voertuig, B=voertuig verbonden, C=laden, E/F=fout"
+  },
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

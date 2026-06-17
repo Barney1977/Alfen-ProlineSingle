@@ -1,0 +1,20 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Validity time remaining",
+    "nl": "Resterende geldigheidstijd"
+  },
+  "desc": {
+    "en": "Seconds remaining before the max current setpoint expires and falls back to safe current",
+    "nl": "Seconden resterend voordat de stroominstelling vervalt naar de veilige stroom"
+  },
+  "units": {
+    "en": "s",
+    "nl": "s"
+  },
+  "decimals": 0,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

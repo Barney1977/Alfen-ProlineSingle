@@ -1,0 +1,117 @@
+{
+  "name": {
+    "en": "Alfen Eve Single / ACE",
+    "nl": "Alfen Eve Single / ACE"
+  },
+  "class": "evcharger",
+  "connectivity": [
+    "lan"
+  ],
+  "platforms": [
+    "local"
+  ],
+  "energy": {
+    "evCharger": true,
+    "cumulative": true,
+    "cumulativeImportedCapability": "meter_power"
+  },
+  "pair": [
+    {
+      "id": "device"
+    },
+    {
+      "id": "list_devices",
+      "template": "list_devices",
+      "navigation": {
+        "next": "add_devices"
+      }
+    },
+    {
+      "id": "add_devices",
+      "template": "add_devices"
+    }
+  ],
+  "capabilities": [
+    "evcharger_charging_state",
+    "evcharger_charging",
+    "measure_power",
+    "measure_power.L1",
+    "measure_power.L2",
+    "measure_power.L3",
+    "meter_power",
+    "measure_voltage.L1",
+    "measure_voltage.L2",
+    "measure_voltage.L3",
+    "measure_current.L1",
+    "measure_current.L2",
+    "measure_current.L3",
+    "max_current",
+    "actual_max_current",
+    "safe_current",
+    "station_max_current",
+    "charge_phases",
+    "valid_time_remaining"
+  ],
+  "capabilitiesOptions": {
+    "measure_power": {
+      "title": {
+        "en": "Total charge power",
+        "nl": "Totaal laadvermogen"
+      }
+    },
+    "measure_power.L1": {
+      "title": {
+        "en": "Power L1",
+        "nl": "Vermogen L1"
+      }
+    },
+    "measure_power.L2": {
+      "title": {
+        "en": "Power L2",
+        "nl": "Vermogen L2"
+      }
+    },
+    "measure_power.L3": {
+      "title": {
+        "en": "Power L3",
+        "nl": "Vermogen L3"
+      }
+    },
+    "measure_voltage.L1": {
+      "title": {
+        "en": "Voltage L1",
+        "nl": "Spanning L1"
+      }
+    },
+    "measure_voltage.L2": {
+      "title": {
+        "en": "Voltage L2",
+        "nl": "Spanning L2"
+      }
+    },
+    "measure_voltage.L3": {
+      "title": {
+        "en": "Voltage L3",
+        "nl": "Spanning L3"
+      }
+    },
+    "measure_current.L1": {
+      "title": {
+        "en": "Current L1",
+        "nl": "Stroom L1"
+      }
+    },
+    "measure_current.L2": {
+      "title": {
+        "en": "Current L2",
+        "nl": "Stroom L2"
+      }
+    },
+    "measure_current.L3": {
+      "title": {
+        "en": "Current L3",
+        "nl": "Stroom L3"
+      }
+    }
+  }
+}

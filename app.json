@@ -1,0 +1,636 @@
+{
+  "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
+  "id": "Alfen.ProlineSingle",
+  "version": "1.0.0",
+  "compatibility": ">=12.4.0",
+  "sdk": 3,
+  "runtime": "nodejs",
+  "platforms": [
+    "local"
+  ],
+  "name": {
+    "en": "alfen-ace"
+  },
+  "description": {
+    "en": "manage your ev charger"
+  },
+  "category": [
+    "energy"
+  ],
+  "permissions": [],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Familie van Barneveld",
+    "email": "hj.vanbarne@gmail.com"
+  },
+  "flow": {
+    "triggers": [
+      {
+        "id": "charging_started",
+        "title": {
+          "en": "Charging started",
+          "nl": "Laden gestart"
+        },
+        "hint": {
+          "en": "Triggered when the EV transitions to an active charging state (C1 or C2).",
+          "nl": "Wordt geactiveerd als het voertuig begint met laden (C1 of C2)."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "charging_stopped",
+        "title": {
+          "en": "Charging stopped",
+          "nl": "Laden gestopt"
+        },
+        "hint": {
+          "en": "Triggered when the EV transitions out of an active charging state.",
+          "nl": "Wordt geactiveerd als het voertuig stopt met laden."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "car_connected",
+        "title": {
+          "en": "Car connected",
+          "nl": "Auto aangesloten"
+        },
+        "hint": {
+          "en": "Triggered when a vehicle is plugged in (state B or C).",
+          "nl": "Wordt geactiveerd als een voertuig wordt aangesloten (status B of C)."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "car_disconnected",
+        "title": {
+          "en": "Car disconnected",
+          "nl": "Auto losgekoppeld"
+        },
+        "hint": {
+          "en": "Triggered when a vehicle is unplugged (state A).",
+          "nl": "Wordt geactiveerd als een voertuig wordt losgekoppeld (status A)."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "charging_paused",
+        "title": {
+          "en": "Charging paused",
+          "nl": "Laden gepauzeerd"
+        },
+        "hint": {
+          "en": "Triggered when charging is paused (current set to 3 A).",
+          "nl": "Wordt geactiveerd als laden wordt gepauzeerd (stroom ingesteld op 3 A)."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "charging_resumed",
+        "title": {
+          "en": "Charging resumed",
+          "nl": "Laden hervat"
+        },
+        "hint": {
+          "en": "Triggered when charging resumes after a pause.",
+          "nl": "Wordt geactiveerd als laden wordt hervat na een pauze."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      }
+    ],
+    "conditions": [
+      {
+        "id": "is_charging",
+        "title": {
+          "en": "Charger !{{is|is not}} actively charging",
+          "nl": "Lader is !{{aan het laden|niet aan het laden}}"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "is_car_connected",
+        "title": {
+          "en": "Car !{{is|is not}} connected",
+          "nl": "Auto !{{is|is niet}} aangesloten"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "is_paused",
+        "title": {
+          "en": "Charging !{{is|is not}} paused",
+          "nl": "Laden is !{{gepauzeerd|niet gepauzeerd}}"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "update_grid_current",
+        "title": {
+          "en": "Update grid current measurement",
+          "nl": "Actueel netstroom meting doorgeven"
+        },
+        "titleFormatted": {
+          "en": "Update grid current: L1 [[current_l1]] A, L2 [[current_l2]] A, L3 [[current_l3]] A",
+          "nl": "Netstroom bijwerken: L1 [[current_l1]] A, L2 [[current_l2]] A, L3 [[current_l3]] A"
+        },
+        "hint": {
+          "en": "Pass the current measured per phase from your energy meter (e.g. P1, smart meter, Shelly EM). Load balancing calculates: available = fuse_A − grid_A per phase, then sets the charger to min(available phases) minus safety margin. For 1-phase connections, only L1 is used.",
+          "nl": "Geef de per fase gemeten stroom door vanuit uw energiemeter (bijv. P1, slimme meter, Shelly EM). Laadbalancering berekent: beschikbaar = zekering_A − net_A per fase, en stelt de lader in op min(beschikbare fasen) minus veiligheidsmarge. Bij 1-fase gebruik alleen L1."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          },
+          {
+            "type": "number",
+            "name": "current_l1",
+            "placeholder": {
+              "en": "L1 current (A)",
+              "nl": "L1 stroom (A)"
+            },
+            "min": 0,
+            "max": 100,
+            "step": 0.1
+          },
+          {
+            "type": "number",
+            "name": "current_l2",
+            "placeholder": {
+              "en": "L2 current (A) — 0 if 1-phase",
+              "nl": "L2 stroom (A) — 0 bij 1-fase"
+            },
+            "min": 0,
+            "max": 100,
+            "step": 0.1
+          },
+          {
+            "type": "number",
+            "name": "current_l3",
+            "placeholder": {
+              "en": "L3 current (A) — 0 if 1-phase",
+              "nl": "L3 stroom (A) — 0 bij 1-fase"
+            },
+            "min": 0,
+            "max": 100,
+            "step": 0.1
+          }
+        ]
+      },
+      {
+        "id": "set_max_current",
+        "title": {
+          "en": "Set maximum charge current (manual override)",
+          "nl": "Stel maximale laadstroom in (handmatige override)"
+        },
+        "titleFormatted": {
+          "en": "Set maximum charge current to [[current]] A",
+          "nl": "Stel maximale laadstroom in op [[current]] A"
+        },
+        "hint": {
+          "en": "Directly sets the Modbus max current setpoint, bypassing load balancing. The charger hardware limit from device settings still applies as upper bound.",
+          "nl": "Stelt het Modbus max stroom setpoint direct in, omzeilt laadbalancering. De hardware maximale stroom uit de apparaatinstellingen geldt nog steeds als bovengrens."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          },
+          {
+            "type": "number",
+            "name": "current",
+            "placeholder": {
+              "en": "Current in Ampere (6–32)",
+              "nl": "Stroom in Ampère (6–32)"
+            },
+            "min": 6,
+            "max": 32,
+            "step": 1
+          }
+        ]
+      },
+      {
+        "id": "set_charge_phases",
+        "title": {
+          "en": "Set charge phases",
+          "nl": "Stel laadphases in"
+        },
+        "titleFormatted": {
+          "en": "Set charge phases to [[phases]]",
+          "nl": "Stel laadphases in op [[phases]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          },
+          {
+            "type": "dropdown",
+            "name": "phases",
+            "title": {
+              "en": "Phases",
+              "nl": "Fasen"
+            },
+            "values": [
+              {
+                "id": "1",
+                "label": {
+                  "en": "1 phase",
+                  "nl": "1 fase"
+                }
+              },
+              {
+                "id": "3",
+                "label": {
+                  "en": "3 phases",
+                  "nl": "3 fasen"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "pause_charging",
+        "title": {
+          "en": "Pause charging",
+          "nl": "Laden pauzeren"
+        },
+        "titleFormatted": {
+          "en": "Pause charging",
+          "nl": "Laden pauzeren"
+        },
+        "hint": {
+          "en": "Sets charge current to 3 A. The car stops drawing power but the session stays active. Load balancing is suspended while paused.",
+          "nl": "Stelt laadstroom in op 3 A. De auto stopt met laden maar de sessie blijft actief. Laadbalancering is opgeschort tijdens de pauze."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      },
+      {
+        "id": "resume_charging",
+        "title": {
+          "en": "Resume charging",
+          "nl": "Laden hervatten"
+        },
+        "titleFormatted": {
+          "en": "Resume charging",
+          "nl": "Laden hervatten"
+        },
+        "hint": {
+          "en": "Resumes charging at the last active setpoint. If load balancing is enabled, the optimal current is recalculated immediately.",
+          "nl": "Hervat laden op het laatste actieve setpoint. Als laadbalancering is ingeschakeld, wordt de optimale stroom direct herberekend."
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=alfen-ace"
+          }
+        ]
+      }
+    ]
+  },
+  "drivers": [
+    {
+      "name": {
+        "en": "Alfen Eve Single / ACE",
+        "nl": "Alfen Eve Single / ACE"
+      },
+      "class": "evcharger",
+      "connectivity": [
+        "lan"
+      ],
+      "platforms": [
+        "local"
+      ],
+      "energy": {
+        "evCharger": true,
+        "cumulative": true,
+        "cumulativeImportedCapability": "meter_power"
+      },
+      "pair": [
+        {
+          "id": "device"
+        },
+        {
+          "id": "list_devices",
+          "template": "list_devices",
+          "navigation": {
+            "next": "add_devices"
+          }
+        },
+        {
+          "id": "add_devices",
+          "template": "add_devices"
+        }
+      ],
+      "capabilities": [
+        "evcharger_charging_state",
+        "evcharger_charging",
+        "measure_power",
+        "measure_power.L1",
+        "measure_power.L2",
+        "measure_power.L3",
+        "meter_power",
+        "measure_voltage.L1",
+        "measure_voltage.L2",
+        "measure_voltage.L3",
+        "measure_current.L1",
+        "measure_current.L2",
+        "measure_current.L3",
+        "max_current",
+        "actual_max_current",
+        "safe_current",
+        "station_max_current",
+        "charge_phases",
+        "valid_time_remaining"
+      ],
+      "capabilitiesOptions": {
+        "measure_power": {
+          "title": {
+            "en": "Total charge power",
+            "nl": "Totaal laadvermogen"
+          }
+        },
+        "measure_power.L1": {
+          "title": {
+            "en": "Power L1",
+            "nl": "Vermogen L1"
+          }
+        },
+        "measure_power.L2": {
+          "title": {
+            "en": "Power L2",
+            "nl": "Vermogen L2"
+          }
+        },
+        "measure_power.L3": {
+          "title": {
+            "en": "Power L3",
+            "nl": "Vermogen L3"
+          }
+        },
+        "measure_voltage.L1": {
+          "title": {
+            "en": "Voltage L1",
+            "nl": "Spanning L1"
+          }
+        },
+        "measure_voltage.L2": {
+          "title": {
+            "en": "Voltage L2",
+            "nl": "Spanning L2"
+          }
+        },
+        "measure_voltage.L3": {
+          "title": {
+            "en": "Voltage L3",
+            "nl": "Spanning L3"
+          }
+        },
+        "measure_current.L1": {
+          "title": {
+            "en": "Current L1",
+            "nl": "Stroom L1"
+          }
+        },
+        "measure_current.L2": {
+          "title": {
+            "en": "Current L2",
+            "nl": "Stroom L2"
+          }
+        },
+        "measure_current.L3": {
+          "title": {
+            "en": "Current L3",
+            "nl": "Stroom L3"
+          }
+        }
+      },
+      "id": "alfen-ace"
+    }
+  ],
+  "capabilities": {
+    "actual_max_current": {
+      "type": "number",
+      "title": {
+        "en": "Actual applied max current",
+        "nl": "Werkelijke max stroom"
+      },
+      "desc": {
+        "en": "The actual maximum current applied to the socket",
+        "nl": "De werkelijk toegepaste maximale laadstroom"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "chartType": "stepLine",
+      "uiComponent": "sensor"
+    },
+    "charge_phases": {
+      "type": "enum",
+      "title": {
+        "en": "Charge phases",
+        "nl": "Laadphases"
+      },
+      "desc": {
+        "en": "Number of phases used for charging (1 or 3)",
+        "nl": "Aantal fasen gebruikt voor laden (1 of 3)"
+      },
+      "values": [
+        {
+          "id": "1",
+          "title": {
+            "en": "1 phase",
+            "nl": "1 fase"
+          }
+        },
+        {
+          "id": "3",
+          "title": {
+            "en": "3 phases",
+            "nl": "3 fasen"
+          }
+        }
+      ],
+      "getable": true,
+      "setable": true,
+      "insights": false,
+      "uiComponent": "picker"
+    },
+    "max_current": {
+      "type": "number",
+      "title": {
+        "en": "Max current setpoint",
+        "nl": "Max stroom instelling"
+      },
+      "desc": {
+        "en": "Maximum charge current setpoint written via Modbus. Range is 6 A up to the hardware maximum configured in device settings.",
+        "nl": "Maximale laadstroom ingesteld via Modbus. Bereik is 6 A tot het hardware maximum ingesteld in de apparaatinstellingen."
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 0,
+      "min": 6,
+      "max": 32,
+      "step": 1,
+      "getable": true,
+      "setable": true,
+      "insights": true,
+      "chartType": "stepLine",
+      "uiComponent": "slider"
+    },
+    "mode3_state": {
+      "type": "string",
+      "title": {
+        "en": "Mode 3 state (IEC 61851)",
+        "nl": "Mode 3 status (IEC 61851)"
+      },
+      "desc": {
+        "en": "IEC 61851 charging state: A=no vehicle, B=vehicle connected, C=charging, E/F=error",
+        "nl": "IEC 61851 laadstatus: A=geen voertuig, B=voertuig verbonden, C=laden, E/F=fout"
+      },
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "safe_current": {
+      "type": "number",
+      "title": {
+        "en": "Safe current (fallback)",
+        "nl": "Veilige stroom (fallback)"
+      },
+      "desc": {
+        "en": "Fallback safe current used when Modbus validity time expires",
+        "nl": "Fallback veilige stroom als de Modbus geldigheidstijd verloopt"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "station_max_current": {
+      "type": "number",
+      "title": {
+        "en": "Station max current",
+        "nl": "Station max stroom"
+      },
+      "desc": {
+        "en": "Station-wide active maximum current (from unit 200)",
+        "nl": "Stationsbreed actieve maximale stroom (van unit 200)"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "chartType": "stepLine",
+      "uiComponent": "sensor"
+    },
+    "valid_time_remaining": {
+      "type": "number",
+      "title": {
+        "en": "Validity time remaining",
+        "nl": "Resterende geldigheidstijd"
+      },
+      "desc": {
+        "en": "Seconds remaining before the max current setpoint expires and falls back to safe current",
+        "nl": "Seconden resterend voordat de stroominstelling vervalt naar de veilige stroom"
+      },
+      "units": {
+        "en": "s",
+        "nl": "s"
+      },
+      "decimals": 0,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    }
+  }
+}
