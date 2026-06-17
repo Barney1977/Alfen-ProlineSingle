@@ -50,7 +50,6 @@
     "max_current",
     "actual_max_current",
     "safe_current",
-    "station_max_current",
     "charge_phases",
     "valid_time_remaining"
   ],

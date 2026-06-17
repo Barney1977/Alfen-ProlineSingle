@@ -14,25 +14,22 @@ const ALFEN_VALIDITY_TIME_S = 60;
 const PAUSE_CURRENT_A       =  3; // below IEC 61851 minimum → car stops drawing, session stays active
 
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
-const UNIT_STATION = 200;
-const UNIT_SOCKET1 =   1;
+const UNIT_SOCKET1 =   1; // Alfen socket registers (all measurements + control)
 
-// ─── Register addresses (datasheet − 1) ──────────────────────────────────────
-const REG_STATION_MAX_CURRENT = 1099;
-const REG_AVAILABILITY        = 1199; // 1200 UNSIGNED16
-const REG_MODE3_STATE         = 1200;
-const REG_ACTUAL_MAX_A        = 1205;
-const REG_VALID_TIME_LEFT     = 1207;
-const REG_MAX_CURRENT_RW      = 1209; // R/W
-const REG_SAFE_CURRENT        = 1211;
-const REG_PHASES              = 1214; // 1215 UNSIGNED16
-const REG_SETPOINT_ACCOUNTED  = 1213; // 1214 UNSIGNED16 — 1=setpoint in use by Alfen
-const REG_VOLTAGE_L1          =  305;
-const REG_CURRENT_L1          =  319;
-const REG_POWER_L1            =  337;
-const REG_ENERGY_SUM          =  373;
+// ─── Register addresses = datasheet addresses (no -1 offset on this firmware) ─
+const REG_MODE3_BULK          = 1200; // bulk read start (Mode3 state)
+const REG_ACTUAL_MAX_A        = 1206;
+const REG_VALID_TIME_LEFT     = 1208;
+const REG_MAX_CURRENT_RW      = 1210; // R/W
+const REG_SAFE_CURRENT        = 1212;
+const REG_PHASES              = 1215;
+const REG_SETPOINT_ACCOUNTED  = 1214;
+const REG_VOLTAGE_L1          =  306;
+const REG_CURRENT_L1          =  320;
+const REG_POWER_L1            =  338;
+const REG_ENERGY_SUM          =  374;
 
-const LOG = false;
+const LOG = true;  // ← zet op false na testen
 
 // ─── Mode3 helpers ────────────────────────────────────────────────────────────
 function mode3ToChargingState(m) {
@@ -48,18 +45,17 @@ const isCarConnected     = m => ['B1','B2','C1','C2','D1','D2'].includes((m||'')
 
 // ─── Float helpers ────────────────────────────────────────────────────────────
 function parseFloat32(buf, offset = 0) {
-  return Buffer.from([buf[offset+2], buf[offset+3], buf[offset], buf[offset+1]]).readFloatBE(0);
+  // Standard big-endian: high word first (no swap needed on this firmware)
+  return buf.readFloatBE(offset);
 }
 function encodeFloat32(value) {
   const b = Buffer.alloc(4);
   b.writeFloatBE(value, 0);
-  return [b.readUInt16BE(2), b.readUInt16BE(0)];
+  return [b.readUInt16BE(0), b.readUInt16BE(2)]; // high word first
 }
 function parseFloat64(buf, offset = 0) {
-  return Buffer.from([
-    buf[offset+6], buf[offset+7], buf[offset+4], buf[offset+5],
-    buf[offset+2], buf[offset+3], buf[offset+0], buf[offset+1],
-  ]).readDoubleBE(0);
+  // Standard big-endian
+  return buf.readDoubleBE(offset);
 }
 function parseString(buf, offset, numRegs) {
   let s = '';
@@ -96,9 +92,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._applyCurrentLimits();
     this._validateLbInterval();
 
-    // ── Modbus ───────────────────────────────────────────────────────────────
+    // ── Modbus — single TCP socket, unit 1 ─────────────────────────────────
+    // Unit 1 covers all registers: measurements (306-425), status (1200-1215),
+    // max current R/W (1210). Unit 200 (station registers) is not used —
+    // those registers are only available on SCN-connected chargers.
     this._socket        = new net.Socket();
-    this._clientStation = new Modbus.client.TCP(this._socket, UNIT_STATION);
     this._clientSocket1 = new Modbus.client.TCP(this._socket, UNIT_SOCKET1);
 
     this._socket.setKeepAlive(true);
@@ -423,6 +421,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._lbSetpointA = setpoint;
     try {
       await this._writeMaxCurrentRaw(setpoint);
+      await this._setCapSafe('max_current', setpoint);
       if (LOG) this.log(`LB keepalive wrote ${setpoint} A`);
     } catch (err) {
       this.log(`LB keepalive write failed: ${err.message}`);
@@ -502,36 +501,27 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _pollAll() {
-    await this._pollStationStatus();
     await this._pollSocketStatus();
     await this._pollMeasurements();
   }
 
-  async _pollStationStatus() {
-    try {
-      const res = await this._clientStation.readHoldingRegisters(REG_STATION_MAX_CURRENT, 2);
-      await this._setCapSafe('station_max_current', this._clean(parseFloat32(res.response._body.valuesAsBuffer)));
-    } catch (err) { this.log('pollStation err:', err.message); }
-  }
-
   async _pollSocketStatus() {
-    // ── Single bulk read: registers 1199–1214 (16 registers, 1 TCP request) ──
-    // Replaces 7 individual reads, saving ~30 ms per poll cycle.
-    // Register layout (Modbus address → datasheet address):
-    //   offset  0 (1199): Availability       UNSIGNED16
-    //   offset  2 (1200): Mode3 state [0..4] STRING (5 regs = 10 bytes)
-    //   offset 12 (1205): Actual max current FLOAT32 (2 regs)
-    //   offset 16 (1207): Valid time         UNSIGNED32 low-word first (2 regs)
-    //   offset 20 (1209): Max current R/W    FLOAT32 (2 regs)
-    //   offset 24 (1211): Safe current       FLOAT32 (2 regs)
-    //   offset 28 (1213): Setpoint accounted UNSIGNED16 (bonus — free)
-    //   offset 30 (1214): Charge phases      UNSIGNED16
+    // ── Single bulk read: registers 1200–1214 (15 registers, 1 TCP request) ──
+    // Register layout (datasheet address = Modbus address on this firmware):
+    //   offset  0 (1200): Mode3 state [0..4] STRING (5 regs = 10 bytes)
+    //   offset 10 (1205→1206): Actual max current FLOAT32 (2 regs)
+    //   offset 14 (1207→1208): Valid time         UNSIGNED32 big-endian (2 regs)
+    //   offset 18 (1209→1210): Max current R/W    FLOAT32 (2 regs)
+    //   offset 22 (1211→1212): Safe current       FLOAT32 (2 regs)
+    //   offset 26 (1213→1214): Setpoint accounted UNSIGNED16
+    //   offset 28 (1214→1215): Charge phases      UNSIGNED16
     try {
-      const res = await this._clientSocket1.readHoldingRegisters(REG_AVAILABILITY, 16);
+      const res = await this._clientSocket1.readHoldingRegisters(REG_MODE3_BULK, 15);
       const b   = res.response._body.valuesAsBuffer;
 
-      // Mode3 state (offset 2, 5 regs = 10 bytes)
-      const mode3 = parseString(b, 2, 5) || 'A';
+      this.unsetWarning().catch(() => {}); // clear any previous error warning
+      // Mode3 state (offset 0, 5 regs = 10 bytes)
+      const mode3 = parseString(b, 0, 5) || 'A';
       const prev  = this._lastMode3;
       if (prev !== null) {
         if (!isActivelyCharging(prev) && isActivelyCharging(mode3))
@@ -549,28 +539,27 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._setCapSafe('evcharger_charging', isActivelyCharging(mode3));
       }
 
-      // Actual applied max current (offset 12, 2 regs FLOAT32)
-      await this._setCapSafe('actual_max_current', this._clean(parseFloat32(b, 12)));
+      // Actual applied max current (offset 10, 2 regs FLOAT32)
+      await this._setCapSafe('actual_max_current', this._clean(parseFloat32(b, 10)));
 
-      // Remaining valid time (offset 16, 2 regs UNSIGNED32 low-word first)
-      await this._setCapSafe('valid_time_remaining', (b.readUInt16BE(18) << 16) | b.readUInt16BE(16));
+      // Remaining valid time (offset 14, 2 regs UNSIGNED32 big-endian)
+      await this._setCapSafe('valid_time_remaining', (b.readUInt16BE(14) << 16) | b.readUInt16BE(16));
 
-      // Max current R/W setpoint (offset 20, 2 regs FLOAT32)
-      const maxCurrVal = this._clean(parseFloat32(b, 20));
+      // Max current R/W setpoint (offset 18, 2 regs FLOAT32)
+      const maxCurrVal = this._clean(parseFloat32(b, 18));
       await this._setCapSafe('max_current', maxCurrVal);
       if (this._lbSetpointA === null && maxCurrVal >= 6) {
         this._lbSetpointA = Math.min(maxCurrVal, Number(this._settings.max_current_limit) || 16);
       }
 
-      // Safe current (offset 24, 2 regs FLOAT32)
-      await this._setCapSafe('safe_current', this._clean(parseFloat32(b, 24)));
+      // Safe current (offset 22, 2 regs FLOAT32)
+      await this._setCapSafe('safe_current', this._clean(parseFloat32(b, 22)));
 
-      // Setpoint accounted for (offset 28, 1 reg UNSIGNED16)
-      // 1 = Alfen is using our written setpoint; 0 = another source overrides it
-      if (LOG) this.log(`Setpoint accounted: ${b.readUInt16BE(28) === 1 ? 'yes' : 'no'}`);
+      // Setpoint accounted for (offset 26, 1 reg UNSIGNED16)
+      if (LOG) this.log(`Setpoint accounted: ${b.readUInt16BE(26) === 1 ? 'yes' : 'no'}`);
 
-      // Charge phases (offset 30, 1 reg UNSIGNED16)
-      await this._setCapSafe('charge_phases', b.readUInt16BE(30) === 3 ? '3' : '1');
+      // Charge phases (offset 28, 1 reg UNSIGNED16)
+      await this._setCapSafe('charge_phases', b.readUInt16BE(28) === 3 ? '3' : '1');
 
     } catch (err) { this.log('pollSocketStatus err:', err.message); }
   }
@@ -636,6 +625,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     if (this._socketConnected) {
       await this._writeMaxCurrentRaw(PAUSE_CURRENT_A);
+      await this._setCapSafe('max_current', PAUSE_CURRENT_A);
     }
     this._lbSetpointA = PAUSE_CURRENT_A;
 
