@@ -11,5 +11,21 @@
   "getable": true,
   "setable": false,
   "insights": true,
-  "uiComponent": "sensor"
+  "uiComponent": "sensor",
+  "values": [
+    {
+      "id": "true",
+      "title": {
+        "en": "Yes",
+        "nl": "Ja"
+      }
+    },
+    {
+      "id": "false",
+      "title": {
+        "en": "No",
+        "nl": "Nee"
+      }
+    }
+  ]
 }

@@ -120,6 +120,24 @@
         "en": "Pause charging",
         "nl": "Laden pauzeren"
       }
+    },
+    "max_current": {
+      "title": {
+        "en": "Charge current",
+        "nl": "Laadvermogen"
+      }
+    },
+    "charge_phases": {
+      "title": {
+        "en": "Number of phases",
+        "nl": "Aantal fases"
+      }
+    },
+    "meter_active": {
+      "title": {
+        "en": "Energy meter active",
+        "nl": "Energiemeter actief"
+      }
     }
   },
   "images": {

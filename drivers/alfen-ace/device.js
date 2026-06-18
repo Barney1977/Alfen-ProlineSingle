@@ -73,6 +73,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     this._settings        = this.getSettings();
 
+    // Initialize meter_active sensor to false (updated when meter data arrives)
+    await this._setCapSafe('meter_active', false);
+
     // Initialize any missing settings to their defaults
     // (happens when device was paired before these settings existed)
     const settingDefaults = {
@@ -574,6 +577,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const b   = res.response._body.valuesAsBuffer;
 
       this.unsetWarning().catch(() => {}); // clear any previous error warning
+      // Refresh meter_active every poll cycle
+      // Active = meter configured + data received + data not stale
+      const staleMs2 = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
+      const dataIsStale = this._gridLastUpdateMs !== null
+        && (Date.now() - this._gridLastUpdateMs) > staleMs2;
+      const isActive = this._meterConfigured
+        && this._meterHasData
+        && !dataIsStale;
+      if (isActive !== this._meterActive) {
+        this._meterActive = isActive;
+      }
+      if (LOG) this.log(`meter_active: configured=${this._meterConfigured} hasData=${this._meterHasData} stale=${dataIsStale} → ${isActive}`);
+      await this._setCapSafe('meter_active', isActive);
       // Reg 1200 = Availability (offset 0, 1 reg = 2 bytes) — skip
       // Mode3 state (offset 2, 5 regs = 10 bytes) → regs 1201-1205
       if (LOG) {
