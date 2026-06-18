@@ -263,14 +263,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     // HomeyAPI is initialised in app.js and shared via this.homey.app
     const homeyApi = this.homey.app.homeyApi;
+    this.log('HomeyAPI available:', !!homeyApi);
     if (!homeyApi) {
       this.log('HomeyAPI not available — cannot attach meter listeners');
+      this.setWarning('HomeyAPI not available — check app permissions').catch(() => {});
       return;
     }
 
     let meterDevice;
     try {
+      this.log('Getting meter device:', deviceId);
       meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
+      this.log('Meter device found:', meterDevice.name);
     } catch (err) {
       this.log(`Meter device '${deviceId}' not found: ${err.message}`);
       this.setWarning(this.homey.__('warnings.meter_device_not_found')).catch(() => {});
@@ -279,14 +283,20 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     const numPhases = Number(this._settings.grid_phases) || 3;
     const caps = numPhases === 1
-      ? ['measure_current.L1']
-      : ['measure_current.L1', 'measure_current.L2', 'measure_current.L3'];
+      ? ['measure_current.l1']
+      : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
 
     // Verify the meter device actually has these capabilities
+    this.log('ALL meter device capabilities:', Object.keys(meterDevice.capabilitiesObj || {}));
     const available = caps.filter(cap => meterDevice.capabilitiesObj?.[cap] !== undefined);
+    this.log('Required caps:', caps, '→ available:', available);
     if (available.length === 0) {
-      this.log(`Meter device has none of: ${caps.join(', ')}`);
+      this.log(`Meter device has none of: ${caps.join(', ')} — available current caps:`,
+        Object.keys(meterDevice.capabilitiesObj || {}).filter(c => c.includes('current') || c.includes('power')));
       this.setWarning(this.homey.__('warnings.meter_capability_missing')).catch(() => {});
+      // Safety: limit to 6A minimum since we cannot monitor grid load
+      this._meterConfigured = true;  // mark as configured so stale logic activates
+      this._meterHasData    = false; // but no data → LB will use 6A safe minimum
       return;
     }
 
@@ -301,9 +311,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
         if (LOG) this.log(`Meter ${cap} = ${value} A`);
         // Update the relevant phase and recalculate
-        if (cap === 'measure_current.L1') this._gridCurrentA.L1 = value;
-        if (cap === 'measure_current.L2') this._gridCurrentA.L2 = value;
-        if (cap === 'measure_current.L3') this._gridCurrentA.L3 = value;
+        if (cap === 'measure_current.l1') this._gridCurrentA.L1 = value;
+        if (cap === 'measure_current.l2') this._gridCurrentA.L2 = value;
+        if (cap === 'measure_current.l3') this._gridCurrentA.L3 = value;
         this._gridLastUpdateMs = Date.now();
         // Clear 'waiting' warning on first received value
         if (!this._meterHasData) {
@@ -518,13 +528,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _scheduleReconnect() {
     if (this._reconnecting) return;
     this._reconnecting = true;
+    this._reconnectAttempts++;
+    const delay = Math.min(RECONNECT_DELAY_MS * Math.pow(2, this._reconnectAttempts - 1), 30000);
+    this.log(`Reconnect attempt ${this._reconnectAttempts} in ${delay / 1000}s`);
     this.homey.setTimeout(async () => {
       try { await this._connect(); } catch (err) {
         this.log('Reconnect failed:', err.message);
         this._reconnecting = false;
         this._scheduleReconnect();
       }
-    }, RECONNECT_DELAY_MS);
+    }, delay);
   }
 
   async onSettings({ newSettings, changedKeys }) {
