@@ -1,0 +1,167 @@
+[
+  {
+    "id": "ip",
+    "type": "text",
+    "label": {
+      "en": "IP address",
+      "nl": "IP-adres"
+    },
+    "value": ""
+  },
+  {
+    "id": "port",
+    "type": "number",
+    "label": {
+      "en": "Modbus TCP port",
+      "nl": "Modbus TCP poort"
+    },
+    "value": 502,
+    "attr": {
+      "min": 1,
+      "max": 65535
+    }
+  },
+  {
+    "id": "grid_phases",
+    "type": "dropdown",
+    "label": {
+      "en": "Number of grid phases",
+      "nl": "Aantal netstroom fasen"
+    },
+    "hint": {
+      "en": "Number of phases on which this charger is connected to the grid.",
+      "nl": "Aantal fasen waarop deze lader is aangesloten op het net."
+    },
+    "value": "3",
+    "values": [
+      {
+        "id": "1",
+        "label": {
+          "en": "1 phase",
+          "nl": "1 fase"
+        }
+      },
+      {
+        "id": "3",
+        "label": {
+          "en": "3 phases",
+          "nl": "3 fasen"
+        }
+      }
+    ]
+  },
+  {
+    "id": "grid_fuse_A",
+    "type": "number",
+    "label": {
+      "en": "Main fuse per phase (A)",
+      "nl": "Hoofdzekering per fase (A)"
+    },
+    "hint": {
+      "en": "Rated current of the main fuse per phase (e.g. 25 A for a 3\u00d725 A connection). Load balancing will never allow the charger to exceed this value per phase.",
+      "nl": "Nominale stroom van de hoofdzekering per fase (bijv. 25 A bij een 3\u00d725 A aansluiting). Laadbalancering zorgt dat de lader deze waarde per fase nooit overschrijdt."
+    },
+    "value": 25,
+    "units": {
+      "en": "A",
+      "nl": "A"
+    },
+    "attr": {
+      "min": 10,
+      "max": 63,
+      "step": 1
+    }
+  },
+  {
+    "id": "max_current_limit",
+    "type": "number",
+    "label": {
+      "en": "Charger cable max current (A)",
+      "nl": "Laadkabel maximale stroom (A)"
+    },
+    "hint": {
+      "en": "Rated maximum current of the charging cable or charger hardware (e.g. 16 A). Upper limit for the charge current slider and load balancing output.",
+      "nl": "Maximale stroom van de laadkabel of hardware (bijv. 16 A). Bovengrens voor de laadstroom schuifregelaar en laadbalancering."
+    },
+    "value": 16,
+    "units": {
+      "en": "A",
+      "nl": "A"
+    },
+    "attr": {
+      "min": 6,
+      "max": 32,
+      "step": 1
+    }
+  },
+  {
+    "id": "meter_device_id",
+    "type": "text",
+    "label": {
+      "en": "Energy meter device ID",
+      "nl": "Energiemeter device ID"
+    },
+    "hint": {
+      "en": "Paste the Homey device ID of your energy meter here. Find it via Homey developer tools (https://developer.homey.app) or leave empty to use manual flow control. The device must expose measure_current.L1 (and L2, L3 for 3-phase).",
+      "nl": "Plak hier het Homey device ID van uw energiemeter. Te vinden via de Homey developer tools (https://developer.homey.app) of leeg laten voor handmatige flowsturing. Het device moet measure_current.L1 (en L2, L3 bij 3-fase) beschikbaar stellen."
+    },
+    "value": ""
+  },
+  {
+    "id": "lb_enabled",
+    "type": "checkbox",
+    "label": {
+      "en": "Enable load balancing keepalive",
+      "nl": "Laadbalancering keepalive inschakelen"
+    },
+    "hint": {
+      "en": "When enabled, Homey periodically rewrites the calculated max current to prevent fallback to safe current (Alfen validity time = 60 s).",
+      "nl": "Indien ingeschakeld schrijft Homey het berekende max stroom periodiek opnieuw naar de lader om terugval naar de veilige stroom te voorkomen (Alfen geldigheidstijd = 60 s)."
+    },
+    "value": true
+  },
+  {
+    "id": "lb_interval",
+    "type": "number",
+    "label": {
+      "en": "Load balancing interval (s)",
+      "nl": "Laadbalancering interval (s)"
+    },
+    "hint": {
+      "en": "How often Homey rewrites the max current setpoint. Must be less than the Alfen validity time (default 60 s). Recommended: 30 s.",
+      "nl": "Hoe vaak Homey het max stroom setpoint herschrijft. Moet kleiner zijn dan de Alfen geldigheidstijd (standaard 60 s). Aanbevolen: 30 s."
+    },
+    "value": 30,
+    "units": {
+      "en": "s",
+      "nl": "s"
+    },
+    "attr": {
+      "min": 10,
+      "max": 59,
+      "step": 1
+    }
+  },
+  {
+    "id": "lb_safety_margin_A",
+    "type": "number",
+    "label": {
+      "en": "Safety margin per phase (A)",
+      "nl": "Veiligheidsmarge per fase (A)"
+    },
+    "hint": {
+      "en": "Subtracted from available current per phase before writing to the charger. Covers the measurement latency window between two P1 meter updates. DSMR 5.0 meters update every 1 s (use 1\u20132 A). DSMR 4.x meters update every 10 s or with high-impact loads (use 3\u20134 A). A higher margin reduces overload risk but also reduces maximum charge current.",
+      "nl": "Wordt per fase van de beschikbare stroom afgetrokken voordat naar de lader wordt geschreven. Dekt het meetvertragingsvenster tussen twee P1-meterupdates. DSMR 5.0 meters geven elke 1 s een update (gebruik 1\u20132 A). DSMR 4.x meters geven elke 10 s een update of bij grote plotselinge lasten (gebruik 3\u20134 A). Een hogere marge verkleint het risico op overbelasting maar beperkt ook de maximale laadstroom."
+    },
+    "value": 1,
+    "units": {
+      "en": "A",
+      "nl": "A"
+    },
+    "attr": {
+      "min": 0,
+      "max": 6,
+      "step": 0.5
+    }
+  }
+]

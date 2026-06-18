@@ -113,6 +113,12 @@
         "en": "Current L3",
         "nl": "Stroom L3"
       }
+    },
+    "evcharger_charging": {
+      "title": {
+        "en": "Pause charging",
+        "nl": "Laden pauzeren"
+      }
     }
   },
   "images": {
