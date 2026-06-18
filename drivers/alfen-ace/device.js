@@ -275,9 +275,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const numPhases = Number(this._settings.grid_phases) || 3;
-    const caps = numPhases === 1
+    // Subscribe to current for LB + total power for liveness indicator
+    const currentCaps = numPhases === 1
       ? ['measure_current.l1']
       : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
+    const caps = [...currentCaps, 'measure_power'];
 
     // Verify the meter device actually has these capabilities
     const available = caps.filter(cap => meterDevice.capabilitiesObj?.[cap] !== undefined);
@@ -304,7 +306,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         if (cap === 'measure_current.l1') this._gridCurrentA.L1 = value;
         if (cap === 'measure_current.l2') this._gridCurrentA.L2 = value;
         if (cap === 'measure_current.l3') this._gridCurrentA.L3 = value;
+        if (cap === 'measure_power') {
+          // P1 total grid power — write directly, updates every ~1s for liveness
+          this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
+        }
         this._gridLastUpdateMs = Date.now();
+        if (cap === 'measure_power') return; // power update doesn't trigger LB recalc
         // Clear 'waiting' warning on first received value
         if (!this._meterHasData) {
           this._meterHasData  = true;

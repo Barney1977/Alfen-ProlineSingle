@@ -52,7 +52,8 @@
     "safe_current",
     "charge_phases",
     "valid_time_remaining",
-    "meter_active"
+    "meter_active",
+    "grid_power"
   ],
   "capabilitiesOptions": {
     "measure_power": {
@@ -137,6 +138,12 @@
       "title": {
         "en": "Energy meter active",
         "nl": "Energiemeter actief"
+      }
+    },
+    "grid_power": {
+      "title": {
+        "en": "Grid power",
+        "nl": "Netvermogen"
       }
     }
   },

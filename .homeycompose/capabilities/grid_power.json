@@ -1,0 +1,18 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Grid power",
+    "nl": "Netvermogen"
+  },
+  "desc": {
+    "en": "Total grid power measured by the smart meter (W). Positive = import, negative = export (solar).",
+    "nl": "Totaal netvermogen gemeten door de slimme meter (W). Positief = import, negatief = export (zonnepanelen)."
+  },
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "uiComponent": "sensor",
+  "units": "W",
+  "decimals": 0,
+  "chartType": "stepLine"
+}
