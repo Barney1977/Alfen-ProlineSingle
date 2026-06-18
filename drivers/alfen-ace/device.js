@@ -72,6 +72,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log(`Device init: ${this.getName()} (${this.getData().id})`);
 
     this._settings        = this.getSettings();
+    this.log('Settings on init:', JSON.stringify({
+      meter_device_id: this._settings.meter_device_id,
+      lb_enabled: this._settings.lb_enabled,
+      grid_fuse_A: this._settings.grid_fuse_A,
+    }));
 
     // Initialize meter_active sensor to false (updated when meter data arrives)
     await this._setCapSafe('meter_active', false);
@@ -250,6 +255,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._destroyMeterListeners();
 
     const deviceId = (this._settings.meter_device_id || '').trim();
+    this.log('_attachMeterListeners: meter_device_id =', JSON.stringify(this._settings.meter_device_id), '→ trimmed:', JSON.stringify(deviceId));
     if (!deviceId) {
       this.log('No meter_device_id configured — using flow action for grid current');
       return;
