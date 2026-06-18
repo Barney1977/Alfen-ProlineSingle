@@ -465,19 +465,20 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
     const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
+    // Calculate current meter state
+    const meterNowActive = this._meterConfigured
+      && this._meterHasData
+      && !dataStale;
+
+    // Always write meter_active every keepalive so value is never
+    // older than the keepalive interval (default 30s, max 59s)
+    this._meterActive = meterNowActive;
+    await this._setCapSafe('meter_active', meterNowActive);
+
     if (dataStale) {
       this.setWarning(this.homey.__('warnings.meter_data_stale')).catch(() => {});
-      if (this._meterActive) {
-        this._meterActive = false;
-        this._setCapSafe('meter_active', false).catch(() => {});
-      }
     } else if (this._meterConfigured && this._meterHasData) {
-      // Only clear warning when we have confirmed live data flowing
       this.unsetWarning().catch(() => {});
-      if (!this._meterActive) {
-        this._meterActive = true;
-        this._setCapSafe('meter_active', true).catch(() => {});
-      }
     }
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
