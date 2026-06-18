@@ -100,7 +100,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
     this._socketConnected = false;
     this._pollingTimer    = null;
-    this._lbTimer         = null;
+    this._lbTimer             = null;
+    this._meterStatusTimer    = null; // updates meter_active when LB is disabled
     this._reconnecting    = false;
     this._lastMode3       = null;
     this._lbSetpointA        = null;   // last value written to charger (A)
@@ -449,37 +450,48 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   _startLoadBalancing() {
-    if (!this._settings.lb_enabled) { this.log('LB keepalive disabled'); return; }
+    if (!this._settings.lb_enabled) {
+      this.log('LB keepalive disabled');
+      // Still update meter_active every 30s even when LB is off
+      if (!this._meterStatusTimer) {
+        this._meterStatusTimer = this.homey.setInterval(async () => {
+          await this._lbKeepalive(); // meter_active update runs before socket check
+        }, 30000);
+      }
+      return;
+    }
+    // Clear fallback timer if LB is now enabled
+    if (this._meterStatusTimer) {
+      this.homey.clearInterval(this._meterStatusTimer);
+      this._meterStatusTimer = null;
+    }
     const ms = this._lbIntervalMs();
     this.log(`LB keepalive started — ${ms / 1000} s interval`);
     this._lbTimer = this.homey.setInterval(() => this._lbKeepalive(), ms);
   }
 
-  _stopLoadBalancing()    { if (this._lbTimer) { this.homey.clearInterval(this._lbTimer); this._lbTimer = null; } }
+  _stopLoadBalancing() {
+    if (this._lbTimer) { this.homey.clearInterval(this._lbTimer); this._lbTimer = null; }
+    if (this._meterStatusTimer) { this.homey.clearInterval(this._meterStatusTimer); this._meterStatusTimer = null; }
+  }
   _restartLoadBalancing() { this._stopLoadBalancing(); this._startLoadBalancing(); }
 
   async _lbKeepalive() {
-    if (!this._socketConnected) return;
-    // Recalculate — _calculateLbSetpoint() handles stale/missing data by
-    // returning 6 A safe minimum when meter data is absent or too old.
+    // ── Meter status — always update regardless of charger connection ──
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
     const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
-    // Calculate current meter state
-    const meterNowActive = this._meterConfigured
-      && this._meterHasData
-      && !dataStale;
-
-    // Always write meter_active every keepalive so value is never
-    // older than the keepalive interval (default 30s, max 59s)
+    const meterNowActive = this._meterConfigured && this._meterHasData && !dataStale;
     this._meterActive = meterNowActive;
     await this._setCapSafe('meter_active', meterNowActive);
-
     if (dataStale) {
       this.setWarning(this.homey.__('warnings.meter_data_stale')).catch(() => {});
     } else if (this._meterConfigured && this._meterHasData) {
       this.unsetWarning().catch(() => {});
     }
+
+    // ── Charger setpoint — only when socket connected ─────────────────
+    if (!this._socketConnected) return;
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
     try {
