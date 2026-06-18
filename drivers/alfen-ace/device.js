@@ -29,7 +29,7 @@ const REG_CURRENT_L1          =  320;
 const REG_POWER_L1            =  338;
 const REG_ENERGY_SUM          =  374;
 
-const LOG = true;  // ← zet op false na testen
+const LOG = false;
 
 // ─── Mode3 helpers ────────────────────────────────────────────────────────────
 function mode3ToChargingState(m) {
@@ -72,11 +72,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log(`Device init: ${this.getName()} (${this.getData().id})`);
 
     this._settings        = this.getSettings();
-    this.log('Settings on init:', JSON.stringify({
-      meter_device_id: this._settings.meter_device_id,
-      lb_enabled: this._settings.lb_enabled,
-      grid_fuse_A: this._settings.grid_fuse_A,
-    }));
 
     // Initialize meter_active sensor to false (updated when meter data arrives)
     await this._setCapSafe('meter_active', false);
@@ -137,8 +132,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._socket.setMaxListeners(20);
 
     this._socket.on('connect', () => {
-      this._socketConnected = true;
-      this._reconnecting    = false;
+      this._socketConnected   = true;
+      this._reconnecting      = false;
+      this._reconnectAttempts = 0;
       this.log('Socket connected');
       this.setAvailable().catch(this.error.bind(this));
     });
@@ -255,7 +251,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._destroyMeterListeners();
 
     const deviceId = (this._settings.meter_device_id || '').trim();
-    this.log('_attachMeterListeners: meter_device_id =', JSON.stringify(this._settings.meter_device_id), '→ trimmed:', JSON.stringify(deviceId));
     if (!deviceId) {
       this.log('No meter_device_id configured — using flow action for grid current');
       return;
@@ -263,7 +258,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     // HomeyAPI is initialised in app.js and shared via this.homey.app
     const homeyApi = this.homey.app.homeyApi;
-    this.log('HomeyAPI available:', !!homeyApi);
     if (!homeyApi) {
       this.log('HomeyAPI not available — cannot attach meter listeners');
       this.setWarning('HomeyAPI not available — check app permissions').catch(() => {});
@@ -272,9 +266,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     let meterDevice;
     try {
-      this.log('Getting meter device:', deviceId);
-      meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
-      this.log('Meter device found:', meterDevice.name);
+        meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
     } catch (err) {
       this.log(`Meter device '${deviceId}' not found: ${err.message}`);
       this.setWarning(this.homey.__('warnings.meter_device_not_found')).catch(() => {});
@@ -287,9 +279,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
 
     // Verify the meter device actually has these capabilities
-    this.log('ALL meter device capabilities:', Object.keys(meterDevice.capabilitiesObj || {}));
     const available = caps.filter(cap => meterDevice.capabilitiesObj?.[cap] !== undefined);
-    this.log('Required caps:', caps, '→ available:', available);
     if (available.length === 0) {
       this.log(`Meter device has none of: ${caps.join(', ')} — available current caps:`,
         Object.keys(meterDevice.capabilitiesObj || {}).filter(c => c.includes('current') || c.includes('power')));
@@ -309,7 +299,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     for (const cap of available) {
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
-        if (LOG) this.log(`Meter ${cap} = ${value} A`);
         // Update the relevant phase and recalculate
         if (cap === 'measure_current.l1') this._gridCurrentA.L1 = value;
         if (cap === 'measure_current.l2') this._gridCurrentA.L2 = value;
@@ -607,16 +596,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       if (isActive !== this._meterActive) {
         this._meterActive = isActive;
       }
-      if (LOG) this.log(`meter_active: configured=${this._meterConfigured} hasData=${this._meterHasData} stale=${dataIsStale} → ${isActive}`);
       await this._setCapSafe('meter_active', isActive);
       // Reg 1200 = Availability (offset 0, 1 reg = 2 bytes) — skip
       // Mode3 state (offset 2, 5 regs = 10 bytes) → regs 1201-1205
-      if (LOG) {
-        const rawBytes = Array.from(b.slice(0, 12)).map(x => '0x' + x.toString(16).padStart(2,'0'));
-        this.log('Mode3 raw bytes (incl avail):', rawBytes.join(' '));
-      }
       const mode3 = parseString(b, 2, 5) || 'A';
-      if (LOG) this.log('Mode3 parsed:', JSON.stringify(mode3));
       const prev  = this._lastMode3;
       if (prev !== null) {
         if (!isActivelyCharging(prev) && isActivelyCharging(mode3))
