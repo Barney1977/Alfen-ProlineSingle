@@ -1,8 +1,8 @@
 {
   "type": "number",
   "title": {
-    "en": "Max current setpoint",
-    "nl": "Max stroom instelling"
+    "en": "Charge current",
+    "nl": "Laadvermogen"
   },
   "desc": {
     "en": "Maximum charge current setpoint written via Modbus. Range is 6 A up to the hardware maximum configured in device settings.",

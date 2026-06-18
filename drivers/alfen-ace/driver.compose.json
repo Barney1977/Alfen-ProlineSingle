@@ -51,7 +51,8 @@
     "actual_max_current",
     "safe_current",
     "charge_phases",
-    "valid_time_remaining"
+    "valid_time_remaining",
+    "meter_active"
   ],
   "capabilitiesOptions": {
     "measure_power": {

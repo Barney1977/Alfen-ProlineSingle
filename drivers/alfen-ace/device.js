@@ -108,6 +108,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._gridLastUpdateMs  = null;  // timestamp of last grid measurement
     this._meterConfigured   = false; // true once meter_device_id is set and listener attached
     this._meterHasData      = false; // true once first value received from meter
+    this._meterActive       = false; // true when meter data is fresh and LB is active
+    this._validTimeCountdown = null;  // timer for 5s valid_time_remaining countdown
     this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 }; // actual charger current from Alfen poll
 
     // Capability instances for the external energy meter (HomeyAPI-based)
@@ -282,6 +284,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     // Show 'waiting' warning — cleared when first live value arrives in callback
     this.setWarning(this.homey.__('warnings.meter_waiting_for_data')).catch(() => {});
     this._meterHasData = false;
+    this._meterActive   = false;
+    this._setCapSafe('meter_active', false).catch(() => {});
     this.log(`Attaching meter listeners on '${meterDevice.name}' for: ${available.join(', ')}`);
 
     for (const cap of available) {
@@ -294,8 +298,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         this._gridLastUpdateMs = Date.now();
         // Clear 'waiting' warning on first received value
         if (!this._meterHasData) {
-          this._meterHasData = true;
+          this._meterHasData  = true;
+          this._meterActive   = true;
           this.unsetWarning().catch(() => {});
+          this._setCapSafe('meter_active', true).catch(() => {});
           this.log('Meter data received — warning cleared');
         }
         this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
@@ -313,6 +319,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
     this._meterCapInstances = [];
     this._meterHasData      = false;
+    this._meterActive       = false;
+    this._setCapSafe('meter_active', false).catch(() => {});
   }
 
   // ── Load balancing calculation ────────────────────────────────────────────
@@ -451,9 +459,17 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
     if (dataStale) {
       this.setWarning(this.homey.__('warnings.meter_data_stale')).catch(() => {});
+      if (this._meterActive) {
+        this._meterActive = false;
+        this._setCapSafe('meter_active', false).catch(() => {});
+      }
     } else if (this._meterConfigured && this._meterHasData) {
       // Only clear warning when we have confirmed live data flowing
       this.unsetWarning().catch(() => {});
+      if (!this._meterActive) {
+        this._meterActive = true;
+        this._setCapSafe('meter_active', true).catch(() => {});
+      }
     }
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
@@ -587,7 +603,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._setCapSafe('actual_max_current', this._clean(parseFloat32(b, 12)));
 
       // Remaining valid time (offset 16, 2 regs UNSIGNED32 big-endian) → regs 1208-1209
-      await this._setCapSafe('valid_time_remaining', (b.readUInt16BE(16) << 16) | b.readUInt16BE(18));
+      const validTimeSec = (b.readUInt16BE(16) << 16) | b.readUInt16BE(18);
+      await this._setCapSafe('valid_time_remaining', validTimeSec);
+      this._startValidTimeCountdown(validTimeSec); // update UI every 5s
 
       // Max current R/W setpoint (offset 20, 2 regs FLOAT32) → regs 1210-1211
       const maxCurrVal = this._clean(parseFloat32(b, 20));
@@ -710,6 +728,23 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       .trigger(this).catch(this.error.bind(this));
   }
 
+  _startValidTimeCountdown(initialSeconds) {
+    this._stopValidTimeCountdown();
+    let remaining = Math.max(0, Math.round(initialSeconds));
+    this._validTimeCountdown = this.homey.setInterval(async () => {
+      remaining = Math.max(0, remaining - 5);
+      await this._setCapSafe('valid_time_remaining', remaining);
+      if (remaining <= 0) this._stopValidTimeCountdown();
+    }, 5000);
+  }
+
+  _stopValidTimeCountdown() {
+    if (this._validTimeCountdown) {
+      this.homey.clearInterval(this._validTimeCountdown);
+      this._validTimeCountdown = null;
+    }
+  }
+
   async _writeMaxCurrentRaw(amps) {
     const [lowWord, highWord] = encodeFloat32(amps);
     await this._clientSocket1.writeMultipleRegisters(REG_MAX_CURRENT_RW, [lowWord, highWord]);
@@ -779,6 +814,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log('Device deleted:', this.getData().id);
     this._destroyMeterListeners();
     this._stopLoadBalancing();
+    this._stopValidTimeCountdown();
     if (this._pollingTimer) { this.homey.clearInterval(this._pollingTimer); this._pollingTimer = null; }
     this._socket.destroy();
   }
@@ -787,6 +823,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log('Device uninit:', this.getData().id);
     this._destroyMeterListeners();
     this._stopLoadBalancing();
+    this._stopValidTimeCountdown();
     if (this._pollingTimer) { this.homey.clearInterval(this._pollingTimer); this._pollingTimer = null; }
     await this._disconnect().catch(() => {});
   }

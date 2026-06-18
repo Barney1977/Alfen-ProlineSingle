@@ -29,5 +29,11 @@
   },
   "notifications": {
     "pause_cleared_by_slider": "Laadpauze opgeheven \u2014 laadstroom handmatig ingesteld op {amps} A."
+  },
+  "capabilities": {
+    "meter_active": {
+      "true": "Ja",
+      "false": "Nee"
+    }
   }
 }

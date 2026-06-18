@@ -29,5 +29,11 @@
   },
   "notifications": {
     "pause_cleared_by_slider": "Charging pause cleared \u2014 charge current manually set to {amps} A."
+  },
+  "capabilities": {
+    "meter_active": {
+      "true": "Yes",
+      "false": "No"
+    }
   }
 }

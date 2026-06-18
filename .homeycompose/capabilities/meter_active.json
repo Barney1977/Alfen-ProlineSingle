@@ -1,0 +1,15 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Energy meter active",
+    "nl": "Energiemeter actief"
+  },
+  "desc": {
+    "en": "Indicates whether the smart meter is connected and sending measurements. Used for active load balancing.",
+    "nl": "Geeft aan of de slimme meter is verbonden en metingen verstuurt. Wordt gebruikt voor actieve laadbalancering."
+  },
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "uiComponent": "sensor"
+}
