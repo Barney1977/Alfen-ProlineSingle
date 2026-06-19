@@ -417,9 +417,7 @@
         "actual_max_current",
         "safe_current",
         "charge_phases",
-        "valid_time_remaining",
-        "meter_active",
-        "grid_power"
+        "valid_time_remaining"
       ],
       "capabilitiesOptions": {
         "measure_power": {
@@ -486,30 +484,6 @@
           "title": {
             "en": "Pause charging",
             "nl": "Laden pauzeren"
-          }
-        },
-        "max_current": {
-          "title": {
-            "en": "Charge current",
-            "nl": "Laadvermogen"
-          }
-        },
-        "charge_phases": {
-          "title": {
-            "en": "Number of phases",
-            "nl": "Aantal fases"
-          }
-        },
-        "meter_active": {
-          "title": {
-            "en": "Energy meter active",
-            "nl": "Energiemeter actief"
-          }
-        },
-        "grid_power": {
-          "title": {
-            "en": "Grid power",
-            "nl": "Netvermogen"
           }
         }
       },
@@ -712,8 +686,8 @@
     "charge_phases": {
       "type": "enum",
       "title": {
-        "en": "Number of phases",
-        "nl": "Aantal fases"
+        "en": "Charge phases",
+        "nl": "Laadphases"
       },
       "desc": {
         "en": "Number of phases used for charging (1 or 3)",
@@ -740,29 +714,11 @@
       "insights": false,
       "uiComponent": "picker"
     },
-    "grid_power": {
-      "type": "number",
-      "title": {
-        "en": "Grid power",
-        "nl": "Netvermogen"
-      },
-      "desc": {
-        "en": "Total grid power measured by the smart meter (W). Positive = import, negative = export (solar).",
-        "nl": "Totaal netvermogen gemeten door de slimme meter (W). Positief = import, negatief = export (zonnepanelen)."
-      },
-      "getable": true,
-      "setable": false,
-      "insights": true,
-      "uiComponent": "sensor",
-      "units": "W",
-      "decimals": 0,
-      "chartType": "stepLine"
-    },
     "max_current": {
       "type": "number",
       "title": {
-        "en": "Charge current",
-        "nl": "Laadvermogen"
+        "en": "Max current setpoint",
+        "nl": "Max stroom instelling"
       },
       "desc": {
         "en": "Maximum charge current setpoint written via Modbus. Range is 6 A up to the hardware maximum configured in device settings.",
@@ -781,21 +737,6 @@
       "insights": true,
       "chartType": "stepLine",
       "uiComponent": "slider"
-    },
-    "meter_active": {
-      "type": "boolean",
-      "title": {
-        "en": "Energy meter active",
-        "nl": "Energiemeter actief"
-      },
-      "desc": {
-        "en": "True when the smart meter is connected and sending data for load balancing.",
-        "nl": "Actief wanneer de slimme meter verbonden is en data stuurt voor laadbalancering."
-      },
-      "getable": true,
-      "setable": false,
-      "insights": true,
-      "uiComponent": "sensor"
     },
     "mode3_state": {
       "type": "string",
@@ -870,7 +811,7 @@
       "decimals": 0,
       "getable": true,
       "setable": false,
-      "insights": true,
+      "insights": false,
       "uiComponent": "sensor"
     }
   }
