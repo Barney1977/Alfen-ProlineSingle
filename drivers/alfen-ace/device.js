@@ -231,8 +231,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._startPolling();
     this._startLoadBalancing();
 
-    // Attach meter listener after a short delay to ensure HomeyAPI is ready
-    this.homey.setTimeout(() => this._attachMeterListeners().catch(e => this.log('Meter attach err:', e.message)), 3000);
+    this._attachMeterListeners().catch(e => this.log('Meter attach err:', e.message));
   }
 
   // ── Energy meter listeners (HomeyAPI) ─────────────────────────────────────
@@ -247,7 +246,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   // For 3-phase: subscribes to measure_current.L1, .L2, .L3
   // For 1-phase: subscribes to measure_current.L1 only
 
-  async _attachMeterListeners() {
+  async _attachMeterListeners(retryCount = 0) {
     // Clean up any previous listeners first
     this._destroyMeterListeners();
 
@@ -262,6 +261,13 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (!homeyApi) {
       this.log('HomeyAPI not available — cannot attach meter listeners');
       this.setWarning('HomeyAPI not available — check app permissions').catch(() => {});
+      // Retry with backoff (HomeyAPI may not be ready yet after firmware update)
+      if (retryCount < 5) {
+        const delay = Math.min(5000 * Math.pow(2, retryCount), 60000);
+        this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/5)`);
+        this.homey.setTimeout(() => this._attachMeterListeners(retryCount + 1)
+          .catch(e => this.log('Meter attach retry err:', e.message)), delay);
+      }
       return;
     }
 
@@ -270,6 +276,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
     } catch (err) {
       this.log(`Meter device '${deviceId}' not found: ${err.message}`);
+      // Retry if device not found — may not be registered yet after firmware update
+      if (retryCount < 3) {
+        const delay = Math.min(10000 * Math.pow(2, retryCount), 60000);
+        this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/3)`);
+        this.homey.setTimeout(() => this._attachMeterListeners(retryCount + 1)
+          .catch(e => this.log('Meter attach retry err:', e.message)), delay);
+        return;
+      }
       this.setWarning(this.homey.__('warnings.meter_device_not_found')).catch(() => {});
       return;
     }
@@ -495,6 +509,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       this.setWarning(this.homey.__('warnings.meter_data_stale')).catch(() => {});
     } else if (this._meterConfigured && this._meterHasData) {
       this.unsetWarning().catch(() => {});
+    }
+
+    // Watchdog: if meter is configured but has never received data,
+    // or data has been stale for > 5 minutes, re-attach listeners.
+    // This recovers from firmware updates that silently drop WebSocket subscriptions.
+    const deviceId = (this._settings.meter_device_id || '').trim();
+    const longStaleMs = 5 * 60 * 1000; // 5 minutes
+    const longStale = this._gridLastUpdateMs !== null
+      && (Date.now() - this._gridLastUpdateMs) > longStaleMs;
+    const neverHadData = this._meterConfigured && !this._meterHasData;
+    if (deviceId && (longStale || neverHadData)) {
+      this.log('Meter watchdog: re-attaching listeners (stale or no data)');
+      this._attachMeterListeners().catch(e => this.log('Watchdog attach err:', e.message));
     }
 
     // ── Charger setpoint — only when socket connected ─────────────────
