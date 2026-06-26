@@ -1,16 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Charging station pole -->
-  <rect x="44" y="62" width="12" height="28" rx="3" fill="white"/>
-  <!-- Base -->
-  <rect x="34" y="88" width="32" height="6" rx="3" fill="white"/>
-  <!-- Charger body -->
-  <rect x="28" y="10" width="44" height="54" rx="6" fill="white"/>
-  <!-- Screen/display area -->
-  <rect x="34" y="16" width="32" height="20" rx="3" fill="#1A73E8"/>
-  <!-- Status light -->
-  <circle cx="50" cy="50" r="5" fill="#1A73E8"/>
-  <!-- Cable -->
-  <path d="M28 52 Q18 56 18 68 Q18 76 26 76" stroke="white" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-  <!-- Lightning bolt on screen -->
-  <path d="M54 18 L47 28 L52 28 L46 36 L56 24 L51 24 Z" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" width="960" height="960">
+
+  <!-- Laadpaal body -->
+  <rect x="410" y="120" width="140" height="520" rx="36" fill="none" stroke="white" stroke-width="36" stroke-linejoin="round"/>
+
+  <!-- Scherm -->
+  <rect x="444" y="164" width="72" height="132" rx="16" fill="none" stroke="white" stroke-width="24"/>
+
+  <!-- Bliksembout -->
+  <polyline points="496,182 456,248 488,248 448,296" fill="none" stroke="white" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Voet / basis -->
+  <rect x="376" y="616" width="208" height="32" rx="16" fill="none" stroke="white" stroke-width="24"/>
+
+  <!-- Kabel -->
+  <path d="M480 640 Q480 720 576 752 L648 776" fill="none" stroke="white" stroke-width="28" stroke-linecap="round"/>
+
+  <!-- Stekker CCS2 boven -->
+  <rect x="640" y="762" width="72" height="56" rx="16" fill="none" stroke="white" stroke-width="24"/>
+
+  <!-- Stekker CCS2 onder -->
+  <rect x="652" y="820" width="48" height="36" rx="12" fill="none" stroke="white" stroke-width="20"/>
+
+  <!-- WiFi signaal links -->
+  <path d="M176 260 Q220 196 296 220" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" opacity="0.75"/>
+  <path d="M204 320 Q244 268 296 284" fill="none" stroke="white" stroke-width="24" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="296" cy="350" r="22" fill="white"/>
+
 </svg>
