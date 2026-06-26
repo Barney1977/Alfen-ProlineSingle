@@ -4,5 +4,8 @@
   },
   "1.0.1": {
     "en": "Connect your Alfen charger and use Homey for loadbalancing"
+  },
+  "1.0.2": {
+    "en": "fixed issues for publishing"
   }
 }
