@@ -368,16 +368,16 @@
         "evcharger_charging_state",
         "evcharger_charging",
         "measure_power",
-        "measure_power.L1",
-        "measure_power.L2",
-        "measure_power.L3",
+        "charger_power_l1",
+        "charger_power_l2",
+        "charger_power_l3",
         "meter_power",
-        "measure_voltage.L1",
-        "measure_voltage.L2",
-        "measure_voltage.L3",
-        "measure_current.L1",
-        "measure_current.L2",
-        "measure_current.L3",
+        "charger_voltage_l1",
+        "charger_voltage_l2",
+        "charger_voltage_l3",
+        "charger_current_l1",
+        "charger_current_l2",
+        "charger_current_l3",
         "max_current",
         "actual_max_current",
         "safe_current",
@@ -392,69 +392,6 @@
             "en": "Total charge power",
             "nl": "Totaal laadvermogen"
           }
-        },
-        "measure_power.L1": {
-          "title": {
-            "en": "Power L1",
-            "nl": "Vermogen L1"
-          },
-          "preventInsights": true
-        },
-        "measure_power.L2": {
-          "title": {
-            "en": "Power L2",
-            "nl": "Vermogen L2"
-          },
-          "preventInsights": true
-        },
-        "measure_power.L3": {
-          "title": {
-            "en": "Power L3",
-            "nl": "Vermogen L3"
-          },
-          "preventInsights": true
-        },
-        "measure_voltage.L1": {
-          "title": {
-            "en": "Voltage L1",
-            "nl": "Spanning L1"
-          },
-          "preventInsights": true
-        },
-        "measure_voltage.L2": {
-          "title": {
-            "en": "Voltage L2",
-            "nl": "Spanning L2"
-          },
-          "preventInsights": true
-        },
-        "measure_voltage.L3": {
-          "title": {
-            "en": "Voltage L3",
-            "nl": "Spanning L3"
-          },
-          "preventInsights": true
-        },
-        "measure_current.L1": {
-          "title": {
-            "en": "Current L1",
-            "nl": "Stroom L1"
-          },
-          "preventInsights": true
-        },
-        "measure_current.L2": {
-          "title": {
-            "en": "Current L2",
-            "nl": "Stroom L2"
-          },
-          "preventInsights": true
-        },
-        "measure_current.L3": {
-          "title": {
-            "en": "Current L3",
-            "nl": "Stroom L3"
-          },
-          "preventInsights": true
         },
         "evcharger_charging": {
           "title": {
@@ -713,6 +650,150 @@
       "setable": true,
       "insights": false,
       "uiComponent": "picker"
+    },
+    "charger_current_l1": {
+      "type": "number",
+      "title": {
+        "en": "Current L1",
+        "nl": "Stroom L1"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_current_l2": {
+      "type": "number",
+      "title": {
+        "en": "Current L2",
+        "nl": "Stroom L2"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_current_l3": {
+      "type": "number",
+      "title": {
+        "en": "Current L3",
+        "nl": "Stroom L3"
+      },
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_power_l1": {
+      "type": "number",
+      "title": {
+        "en": "Power L1",
+        "nl": "Vermogen L1"
+      },
+      "units": {
+        "en": "W",
+        "nl": "W"
+      },
+      "decimals": 0,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_power_l2": {
+      "type": "number",
+      "title": {
+        "en": "Power L2",
+        "nl": "Vermogen L2"
+      },
+      "units": {
+        "en": "W",
+        "nl": "W"
+      },
+      "decimals": 0,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_power_l3": {
+      "type": "number",
+      "title": {
+        "en": "Power L3",
+        "nl": "Vermogen L3"
+      },
+      "units": {
+        "en": "W",
+        "nl": "W"
+      },
+      "decimals": 0,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_voltage_l1": {
+      "type": "number",
+      "title": {
+        "en": "Voltage L1",
+        "nl": "Spanning L1"
+      },
+      "units": {
+        "en": "V",
+        "nl": "V"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_voltage_l2": {
+      "type": "number",
+      "title": {
+        "en": "Voltage L2",
+        "nl": "Spanning L2"
+      },
+      "units": {
+        "en": "V",
+        "nl": "V"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
+    },
+    "charger_voltage_l3": {
+      "type": "number",
+      "title": {
+        "en": "Voltage L3",
+        "nl": "Spanning L3"
+      },
+      "units": {
+        "en": "V",
+        "nl": "V"
+      },
+      "decimals": 1,
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor"
     },
     "grid_power": {
       "type": "number",
