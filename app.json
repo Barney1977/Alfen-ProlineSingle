@@ -35,42 +35,6 @@
   "flow": {
     "triggers": [
       {
-        "id": "charging_started",
-        "title": {
-          "en": "Charging started",
-          "nl": "Laden gestart"
-        },
-        "hint": {
-          "en": "Triggered when the EV transitions to an active charging state (C1 or C2).",
-          "nl": "Wordt geactiveerd als het voertuig begint met laden (C1 of C2)."
-        },
-        "args": [
-          {
-            "type": "device",
-            "name": "device",
-            "filter": "driver_id=alfen-ace"
-          }
-        ]
-      },
-      {
-        "id": "charging_stopped",
-        "title": {
-          "en": "Charging stopped",
-          "nl": "Laden gestopt"
-        },
-        "hint": {
-          "en": "Triggered when the EV transitions out of an active charging state.",
-          "nl": "Wordt geactiveerd als het voertuig stopt met laden."
-        },
-        "args": [
-          {
-            "type": "device",
-            "name": "device",
-            "filter": "driver_id=alfen-ace"
-          }
-        ]
-      },
-      {
         "id": "car_connected",
         "title": {
           "en": "Car connected",
@@ -433,55 +397,64 @@
           "title": {
             "en": "Power L1",
             "nl": "Vermogen L1"
-          }
+          },
+          "preventInsights": true
         },
         "measure_power.L2": {
           "title": {
             "en": "Power L2",
             "nl": "Vermogen L2"
-          }
+          },
+          "preventInsights": true
         },
         "measure_power.L3": {
           "title": {
             "en": "Power L3",
             "nl": "Vermogen L3"
-          }
+          },
+          "preventInsights": true
         },
         "measure_voltage.L1": {
           "title": {
             "en": "Voltage L1",
             "nl": "Spanning L1"
-          }
+          },
+          "preventInsights": true
         },
         "measure_voltage.L2": {
           "title": {
             "en": "Voltage L2",
             "nl": "Spanning L2"
-          }
+          },
+          "preventInsights": true
         },
         "measure_voltage.L3": {
           "title": {
             "en": "Voltage L3",
             "nl": "Spanning L3"
-          }
+          },
+          "preventInsights": true
         },
         "measure_current.L1": {
           "title": {
             "en": "Current L1",
             "nl": "Stroom L1"
-          }
+          },
+          "preventInsights": true
         },
         "measure_current.L2": {
           "title": {
             "en": "Current L2",
             "nl": "Stroom L2"
-          }
+          },
+          "preventInsights": true
         },
         "measure_current.L3": {
           "title": {
             "en": "Current L3",
             "nl": "Stroom L3"
-          }
+          },
+          "preventInsights": true
         },
         "evcharger_charging": {
           "title": {
