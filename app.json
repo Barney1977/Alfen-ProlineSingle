@@ -13,7 +13,8 @@
     "nl": "Alfen Eve Single / ACE Laadpaal"
   },
   "description": {
-    "en": "manage your ev charger"
+    "en": "Integrate your Alfen EV charger in Homey",
+    "nl": "Integreer je Alfen EV lader in Homey"
   },
   "category": [
     "energy"
