@@ -1,0 +1,16 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Current L2",
+    "nl": "Stroom L2"
+  },
+  "units": {
+    "en": "A",
+    "nl": "A"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

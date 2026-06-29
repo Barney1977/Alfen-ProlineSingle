@@ -1,0 +1,16 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Power L2",
+    "nl": "Vermogen L2"
+  },
+  "units": {
+    "en": "W",
+    "nl": "W"
+  },
+  "decimals": 0,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

@@ -11,16 +11,16 @@ const CONNECT_TIMEOUT_MS    =  8 * 1000;
 const LB_INTERVAL_DEFAULT_S = 30;
 const LB_INTERVAL_MIN_S     = 10;
 const ALFEN_VALIDITY_TIME_S = 60;
-const PAUSE_CURRENT_A       =  5; // below IEC 61851 minimum (6A) → car stops drawing, session stays active
+const PAUSE_CURRENT_A       =  5;
 
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
-const UNIT_SOCKET1 =   1; // Alfen socket registers (all measurements + control)
+const UNIT_SOCKET1 =   1;
 
-// ─── Register addresses = datasheet addresses (no -1 offset on this firmware) ─
-const REG_MODE3_BULK          = 1200; // bulk read start (Mode3 state)
+// ─── Register addresses ───────────────────────────────────────────────────────
+const REG_MODE3_BULK          = 1200;
 const REG_ACTUAL_MAX_A        = 1206;
 const REG_VALID_TIME_LEFT     = 1208;
-const REG_MAX_CURRENT_RW      = 1210; // R/W
+const REG_MAX_CURRENT_RW      = 1210;
 const REG_SAFE_CURRENT        = 1212;
 const REG_PHASES              = 1215;
 const REG_SETPOINT_ACCOUNTED  = 1214;
@@ -45,16 +45,14 @@ const isCarConnected     = m => ['B1','B2','C1','C2','D1','D2'].includes((m||'')
 
 // ─── Float helpers ────────────────────────────────────────────────────────────
 function parseFloat32(buf, offset = 0) {
-  // Standard big-endian: high word first (no swap needed on this firmware)
   return buf.readFloatBE(offset);
 }
 function encodeFloat32(value) {
   const b = Buffer.alloc(4);
   b.writeFloatBE(value, 0);
-  return [b.readUInt16BE(0), b.readUInt16BE(2)]; // high word first
+  return [b.readUInt16BE(0), b.readUInt16BE(2)];
 }
 function parseFloat64(buf, offset = 0) {
-  // Standard big-endian
   return buf.readDoubleBE(offset);
 }
 function parseString(buf, offset, numRegs) {
@@ -71,13 +69,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async onInit() {
     this.log(`Device init: ${this.getName()} (${this.getData().id})`);
 
-    this._settings        = this.getSettings();
+    this._settings = this.getSettings();
 
-    // Initialize meter_active sensor to false (updated when meter data arrives)
     await this._setCapSafe('meter_active', false);
 
-    // Initialize any missing settings to their defaults
-    // (happens when device was paired before these settings existed)
     const settingDefaults = {
       grid_phases:          '3',
       grid_fuse_A:           25,
@@ -98,34 +93,29 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this.setSettings(missingSettings);
       this._settings = this.getSettings();
     }
-    this._socketConnected = false;
-    this._pollingTimer    = null;
-    this._lbTimer             = null;
-    this._meterStatusTimer    = null; // updates meter_active when LB is disabled
-    this._reconnecting    = false;
-    this._lastMode3       = null;
-    this._lbSetpointA        = null;   // last value written to charger (A)
-    this._userMaxA            = null;   // user's desired maximum (slider/flow), LB upper bound
-    this._paused              = false;  // true when charge is intentionally paused
-    this._prePauseSetpointA   = null;   // setpoint to restore on resume
-    this._gridCurrentA    = { L1: null, L2: null, L3: null };
-    this._gridLastUpdateMs  = null;  // timestamp of last grid measurement
-    this._meterConfigured   = false; // true once meter_device_id is set and listener attached
-    this._meterHasData      = false; // true once first value received from meter
-    this._meterActive       = false; // true when meter data is fresh and LB is active
-    this._validTimeCountdown = null;  // timer for 5s valid_time_remaining countdown
-    this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 }; // actual charger current from Alfen poll
 
-    // Capability instances for the external energy meter (HomeyAPI-based)
+    this._socketConnected   = false;
+    this._pollingTimer      = null;
+    this._lbTimer           = null;
+    this._meterStatusTimer  = null;
+    this._reconnecting      = false;
+    this._lastMode3         = null;
+    this._lbSetpointA       = null;
+    this._userMaxA          = null;
+    this._paused            = false;
+    this._prePauseSetpointA = null;
+    this._gridCurrentA      = { L1: null, L2: null, L3: null };
+    this._gridLastUpdateMs  = null;
+    this._meterConfigured   = false;
+    this._meterHasData      = false;
+    this._meterActive       = false;
+    this._validTimeCountdown = null;
+    this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 };
     this._meterCapInstances = [];
 
     this._applyCurrentLimits();
     this._validateLbInterval();
 
-    // ── Modbus — single TCP socket, unit 1 ─────────────────────────────────
-    // Unit 1 covers all registers: measurements (306-425), status (1200-1215),
-    // max current R/W (1210). Unit 200 (station registers) is not used —
-    // those registers are only available on SCN-connected chargers.
     this._socket        = new net.Socket();
     this._clientSocket1 = new Modbus.client.TCP(this._socket, UNIT_SOCKET1);
 
@@ -160,14 +150,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._pauseCharging();
       }
     });
-
     this.registerCapabilityListener('charge_phases', async value => {
       await this._writePhases(Number(value));
     });
 
     // ── Flow actions ─────────────────────────────────────────────────────────
-
-    // Fallback: manual grid current update via flow (when no meter_device_id set)
     this.homey.flow
       .getActionCard('update_grid_current')
       .registerRunListener(async args => {
@@ -214,7 +201,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.homey.flow
       .getConditionCard('is_car_connected')
       .registerRunListener(() => isCarConnected(this._lastMode3));
-
     this.homey.flow
       .getConditionCard('is_paused')
       .registerRunListener(() => this._paused);
@@ -230,24 +216,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     this._startPolling();
     this._startLoadBalancing();
-
     this._attachMeterListeners().catch(e => this.log('Meter attach err:', e.message));
   }
 
   // ── Energy meter listeners (HomeyAPI) ─────────────────────────────────────
-  //
-  // Uses HomeyAPI.makeCapabilityInstance() to subscribe to real-time
-  // capability value changes on an external energy meter device.
-  // The meter device ID is stored in device settings (meter_device_id).
-  //
-  // When a new current measurement arrives, _updateGridCurrent() is called
-  // immediately — no flow required.
-  //
-  // For 3-phase: subscribes to measure_current.L1, .L2, .L3
-  // For 1-phase: subscribes to measure_current.L1 only
-
   async _attachMeterListeners(retryCount = 0) {
-    // Clean up any previous listeners first
     this._destroyMeterListeners();
 
     const deviceId = (this._settings.meter_device_id || '').trim();
@@ -256,12 +229,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       return;
     }
 
-    // HomeyAPI is initialised in app.js and shared via this.homey.app
     const homeyApi = this.homey.app.homeyApi;
     if (!homeyApi) {
       this.log('HomeyAPI not available — cannot attach meter listeners');
       this.setWarning('HomeyAPI not available — check app permissions').catch(() => {});
-      // Retry with backoff (HomeyAPI may not be ready yet after firmware update)
       if (retryCount < 5) {
         const delay = Math.min(5000 * Math.pow(2, retryCount), 60000);
         this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/5)`);
@@ -273,10 +244,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     let meterDevice;
     try {
-        meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
+      meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
     } catch (err) {
       this.log(`Meter device '${deviceId}' not found: ${err.message}`);
-      // Retry if device not found — may not be registered yet after firmware update
       if (retryCount < 3) {
         const delay = Math.min(10000 * Math.pow(2, retryCount), 60000);
         this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/3)`);
@@ -289,47 +259,40 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const numPhases = Number(this._settings.grid_phases) || 3;
-    // Subscribe to current for LB + total power for liveness indicator
     const currentCaps = numPhases === 1
       ? ['measure_current.l1']
       : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
     const caps = [...currentCaps, 'measure_power'];
 
-    // Verify the meter device actually has these capabilities
     const available = caps.filter(cap => meterDevice.capabilitiesObj?.[cap] !== undefined);
     if (available.length === 0) {
       this.log(`Meter device has none of: ${caps.join(', ')} — available current caps:`,
         Object.keys(meterDevice.capabilitiesObj || {}).filter(c => c.includes('current') || c.includes('power')));
       this.setWarning(this.homey.__('warnings.meter_capability_missing')).catch(() => {});
-      // Safety: limit to 6A minimum since we cannot monitor grid load
-      this._meterConfigured = true;  // mark as configured so stale logic activates
-      this._meterHasData    = false; // but no data → LB will use 6A safe minimum
+      this._meterConfigured = true;
+      this._meterHasData    = false;
       return;
     }
 
-    // Show 'waiting' warning — cleared when first live value arrives in callback
     this.setWarning(this.homey.__('warnings.meter_waiting_for_data')).catch(() => {});
     this._meterHasData = false;
-    this._meterActive   = false;
+    this._meterActive  = false;
     this._setCapSafe('meter_active', false).catch(() => {});
     this.log(`Attaching meter listeners on '${meterDevice.name}' for: ${available.join(', ')}`);
 
     for (const cap of available) {
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
-        // Update the relevant phase and recalculate
         if (cap === 'measure_current.l1') this._gridCurrentA.L1 = value;
         if (cap === 'measure_current.l2') this._gridCurrentA.L2 = value;
         if (cap === 'measure_current.l3') this._gridCurrentA.L3 = value;
         if (cap === 'measure_power') {
-          // P1 total grid power — write directly, updates every ~1s for liveness
           this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
         }
         this._gridLastUpdateMs = Date.now();
-        if (cap === 'measure_power') return; // power update doesn't trigger LB recalc
-        // Clear 'waiting' warning on first received value
+        if (cap === 'measure_power') return;
         if (!this._meterHasData) {
-          this._meterHasData  = true;
-          this._meterActive   = true;
+          this._meterHasData = true;
+          this._meterActive  = true;
           this.unsetWarning().catch(() => {});
           this._setCapSafe('meter_active', true).catch(() => {});
           this.log('Meter data received — warning cleared');
@@ -354,61 +317,34 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   // ── Load balancing calculation ────────────────────────────────────────────
-  //
-  // Called either by:
-  //   (a) _attachMeterListeners callback  — real-time, triggered by meter changes
-  //   (b) _updateGridCurrent flow action  — manual fallback
-  //   (c) _lbKeepalive timer              — Alfen validity time refresh
-  //
-  // Formula per phase:
-  //   available_Ln = fuse_A − grid_Ln_A + charger_A − safety_margin_A
-  //
-  // The current charger setpoint is added back because the meter measures
-  // total load including the charger. Without this correction every tick
-  // would reduce the setpoint until it hits the minimum.
-  //
-  // Setpoint = clamp(min(available phases), 6, cable_max_A)
-
   _calculateLbSetpoint() {
-    // While paused, always return the pause current regardless of LB logic
     if (this._paused) return PAUSE_CURRENT_A;
     const fuseA    = Number(this._settings.grid_fuse_A)        || 25;
     const cableMax = Number(this._settings.max_current_limit)  || 16;
     const margin   = Number(this._settings.lb_safety_margin_A) ||  1;
     const phases   = Number(this._settings.grid_phases)        ||  3;
-    // Use actual measured charger current per phase from the Alfen for accuracy.
-    // Falls back to setpoint if charger hasn't been polled yet (startup).
-    const fallbackA  = this._lbSetpointA || 0;
-    const chargerA   = {
+    const fallbackA = this._lbSetpointA || 0;
+    const chargerA  = {
       L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
       L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : fallbackA,
       L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : fallbackA,
     };
 
-    // Determine if grid data is fresh enough to trust.
-    // Stale threshold = 2× lb_interval (gives one missed cycle before acting).
-    const staleMs    = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
-    const dataStale  = this._gridLastUpdateMs !== null
+    const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
+    const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
-    const noDataYet  = this._gridLastUpdateMs === null && this._meterConfigured;
+    const noDataYet = this._gridLastUpdateMs === null && this._meterConfigured;
 
-    // If meter is configured but data is stale or not yet received:
-    // → fall back to the safe minimum (6 A) to prevent overload.
     if (dataStale || noDataYet) {
       if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
       if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
-      return 6; // safe minimum per Alfen spec
+      return 6;
     }
 
-    // Upper bound for LB output:
-    // If user has set a manual maximum via slider, respect it — LB can only
-    // reduce below it, never increase above it.
     const userMax = this._userMaxA !== null
       ? Math.min(this._userMaxA, cableMax)
       : cableMax;
 
-    // When no meter is configured: repeat last written value to keep
-    // the Alfen validity timer alive without overriding manual adjustments.
     if (!this._meterConfigured) {
       return this._lbSetpointA !== null
         ? Math.max(6, Math.min(this._lbSetpointA, userMax))
@@ -427,7 +363,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
 
     const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
-
     if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${chargerA} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
@@ -435,27 +370,21 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async _recalculateAndWrite() {
     if (!this._socketConnected) return;
     const setpoint = this._calculateLbSetpoint();
-    if (setpoint === this._lbSetpointA) return; // no change, skip write
+    if (setpoint === this._lbSetpointA) return;
     this.log(`LB setpoint: ${this._lbSetpointA} → ${setpoint} A`);
     this._lbSetpointA = setpoint;
     await this._writeMaxCurrentRaw(setpoint);
     await this._setCapSafe('max_current', setpoint);
   }
 
-  // Called by flow action (manual fallback when no meter_device_id)
   async _updateGridCurrent(l1, l2, l3) {
-    this._gridCurrentA    = { L1: l1, L2: l2, L3: l3 };
+    this._gridCurrentA     = { L1: l1, L2: l2, L3: l3 };
     this._gridLastUpdateMs = Date.now();
-    this._meterConfigured  = true; // flow-action path also counts as configured
+    this._meterConfigured  = true;
     await this._recalculateAndWrite();
   }
 
   // ── LB keepalive timer ────────────────────────────────────────────────────
-  //
-  // Even when the meter pushes updates frequently, the Alfen validity timer
-  // requires a write within 60 s. The keepalive ensures this regardless of
-  // whether the meter is sending data.
-
   _lbIntervalMs() {
     const s = Math.max(LB_INTERVAL_MIN_S, Math.min(Number(this._settings.lb_interval) || LB_INTERVAL_DEFAULT_S, ALFEN_VALIDITY_TIME_S - 1));
     return s * 1000;
@@ -473,15 +402,13 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _startLoadBalancing() {
     if (!this._settings.lb_enabled) {
       this.log('LB keepalive disabled');
-      // Still update meter_active every 30s even when LB is off
       if (!this._meterStatusTimer) {
         this._meterStatusTimer = this.homey.setInterval(async () => {
-          await this._lbKeepalive(); // meter_active update runs before socket check
+          await this._lbKeepalive();
         }, 30000);
       }
       return;
     }
-    // Clear fallback timer if LB is now enabled
     if (this._meterStatusTimer) {
       this.homey.clearInterval(this._meterStatusTimer);
       this._meterStatusTimer = null;
@@ -492,13 +419,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   _stopLoadBalancing() {
-    if (this._lbTimer) { this.homey.clearInterval(this._lbTimer); this._lbTimer = null; }
+    if (this._lbTimer)        { this.homey.clearInterval(this._lbTimer);        this._lbTimer        = null; }
     if (this._meterStatusTimer) { this.homey.clearInterval(this._meterStatusTimer); this._meterStatusTimer = null; }
   }
   _restartLoadBalancing() { this._stopLoadBalancing(); this._startLoadBalancing(); }
 
   async _lbKeepalive() {
-    // ── Meter status — always update regardless of charger connection ──
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
     const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
@@ -511,12 +437,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       this.unsetWarning().catch(() => {});
     }
 
-    // Watchdog: if meter is configured but has never received data,
-    // or data has been stale for > 5 minutes, re-attach listeners.
-    // This recovers from firmware updates that silently drop WebSocket subscriptions.
-    const deviceId = (this._settings.meter_device_id || '').trim();
-    const longStaleMs = 5 * 60 * 1000; // 5 minutes
-    const longStale = this._gridLastUpdateMs !== null
+    const deviceId    = (this._settings.meter_device_id || '').trim();
+    const longStaleMs = 5 * 60 * 1000;
+    const longStale   = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > longStaleMs;
     const neverHadData = this._meterConfigured && !this._meterHasData;
     if (deviceId && (longStale || neverHadData)) {
@@ -524,7 +447,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       this._attachMeterListeners().catch(e => this.log('Watchdog attach err:', e.message));
     }
 
-    // ── Charger setpoint — only when socket connected ─────────────────
     if (!this._socketConnected) return;
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
@@ -538,7 +460,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   // ── Connection ────────────────────────────────────────────────────────────
-
   async _connect() {
     if (this._socketConnected) return;
     return new Promise((resolve, reject) => {
@@ -603,7 +524,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────
-
   _startPolling() {
     this._pollAll().catch(err => this.log('Initial poll error:', err.message));
     this._pollingTimer = this.homey.setInterval(async () => {
@@ -618,41 +538,21 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _pollSocketStatus() {
-    // ── Single bulk read: registers 1200–1214 (15 registers, 1 TCP request) ──
-    // Register layout (datasheet address = Modbus address on this firmware):
-    //   offset  0 (1200): Mode3 state [0..4] STRING (5 regs = 10 bytes)
-    //   offset 10 (1205→1206): Actual max current FLOAT32 (2 regs)
-    //   offset 14 (1207→1208): Valid time         UNSIGNED32 big-endian (2 regs)
-    //   offset 18 (1209→1210): Max current R/W    FLOAT32 (2 regs)
-    //   offset 22 (1211→1212): Safe current       FLOAT32 (2 regs)
-    //   offset 26 (1213→1214): Setpoint accounted UNSIGNED16
-    //   offset 28 (1214→1215): Charge phases      UNSIGNED16
     try {
       const res = await this._clientSocket1.readHoldingRegisters(REG_MODE3_BULK, 16);
       const b   = res.response._body.valuesAsBuffer;
 
-      this.unsetWarning().catch(() => {}); // clear any previous error warning
-      // Refresh meter_active every poll cycle
-      // Active = meter configured + data received + data not stale
-      const staleMs2 = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
+      this.unsetWarning().catch(() => {});
+      const staleMs2    = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
       const dataIsStale = this._gridLastUpdateMs !== null
         && (Date.now() - this._gridLastUpdateMs) > staleMs2;
-      const isActive = this._meterConfigured
-        && this._meterHasData
-        && !dataIsStale;
-      if (isActive !== this._meterActive) {
-        this._meterActive = isActive;
-      }
+      const isActive = this._meterConfigured && this._meterHasData && !dataIsStale;
+      if (isActive !== this._meterActive) this._meterActive = isActive;
       await this._setCapSafe('meter_active', isActive);
-      // Reg 1200 = Availability (offset 0, 1 reg = 2 bytes) — skip
-      // Mode3 state (offset 2, 5 regs = 10 bytes) → regs 1201-1205
+
       const mode3 = parseString(b, 2, 5) || 'A';
       const prev  = this._lastMode3;
       if (prev !== null) {
-        if (!isActivelyCharging(prev) && isActivelyCharging(mode3))
-          this.homey.flow.getDeviceTriggerCard('charging_started').trigger(this).catch(this.error.bind(this));
-        if (isActivelyCharging(prev) && !isActivelyCharging(mode3))
-          this.homey.flow.getDeviceTriggerCard('charging_stopped').trigger(this).catch(this.error.bind(this));
         if (!isCarConnected(prev) && isCarConnected(mode3))
           this.homey.flow.getDeviceTriggerCard('car_connected').trigger(this).catch(this.error.bind(this));
         if (isCarConnected(prev) && !isCarConnected(mode3))
@@ -664,30 +564,22 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._setCapSafe('evcharger_charging', isActivelyCharging(mode3));
       }
 
-      // Actual applied max current (offset 12, 2 regs FLOAT32) → regs 1206-1207
       await this._setCapSafe('actual_max_current', this._clean(parseFloat32(b, 12)));
 
-      // Remaining valid time (offset 16, 2 regs UNSIGNED32 big-endian) → regs 1208-1209
       const validTimeSec = (b.readUInt16BE(16) << 16) | b.readUInt16BE(18);
       await this._setCapSafe('valid_time_remaining', validTimeSec);
-      this._startValidTimeCountdown(validTimeSec); // update UI every 5s
+      this._startValidTimeCountdown(validTimeSec);
 
-      // Max current R/W setpoint (offset 20, 2 regs FLOAT32) → regs 1210-1211
       const maxCurrVal = this._clean(parseFloat32(b, 20));
       await this._setCapSafe('max_current', maxCurrVal);
       if (this._lbSetpointA === null && maxCurrVal >= 6) {
         const hwMax = Number(this._settings.max_current_limit) || 16;
         this._lbSetpointA = Math.min(maxCurrVal, hwMax);
-        this._userMaxA    = Math.min(maxCurrVal, hwMax); // initialize user max from charger
+        this._userMaxA    = Math.min(maxCurrVal, hwMax);
       }
 
-      // Safe current (offset 24, 2 regs FLOAT32) → regs 1212-1213
       await this._setCapSafe('safe_current', this._clean(parseFloat32(b, 24)));
-
-      // Setpoint accounted for (offset 28, 1 reg UNSIGNED16) → reg 1214
       if (LOG) this.log(`Setpoint accounted: ${b.readUInt16BE(28) === 1 ? 'yes' : 'no'}`);
-
-      // Charge phases (offset 30, 1 reg UNSIGNED16) → reg 1215
       await this._setCapSafe('charge_phases', b.readUInt16BE(30) === 3 ? '3' : '1');
 
     } catch (err) { this.log('pollSocketStatus err:', err.message); }
@@ -697,9 +589,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     try {
       const res = await this._clientSocket1.readHoldingRegisters(REG_VOLTAGE_L1, 6);
       const b   = res.response._body.valuesAsBuffer;
-      await this._setCapSafe('measure_voltage.L1', this._clean(parseFloat32(b, 0)));
-      await this._setCapSafe('measure_voltage.L2', this._clean(parseFloat32(b, 4)));
-      await this._setCapSafe('measure_voltage.L3', this._clean(parseFloat32(b, 8)));
+      await this._setCapSafe('charger_voltage_l1', this._clean(parseFloat32(b, 0)));
+      await this._setCapSafe('charger_voltage_l2', this._clean(parseFloat32(b, 4)));
+      await this._setCapSafe('charger_voltage_l3', this._clean(parseFloat32(b, 8)));
     } catch (err) { this.log('pollVoltage err:', err.message); }
 
     try {
@@ -708,19 +600,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const cL1 = this._clean(parseFloat32(b, 0));
       const cL2 = this._clean(parseFloat32(b, 4));
       const cL3 = this._clean(parseFloat32(b, 8));
-      await this._setCapSafe('measure_current.L1', cL1);
-      await this._setCapSafe('measure_current.L2', cL2);
-      await this._setCapSafe('measure_current.L3', cL3);
-      // Keep actual charger current fresh for LB calculation
+      await this._setCapSafe('charger_current_l1', cL1);
+      await this._setCapSafe('charger_current_l2', cL2);
+      await this._setCapSafe('charger_current_l3', cL3);
       this._chargerCurrentA = { L1: cL1, L2: cL2, L3: cL3 };
     } catch (err) { this.log('pollCurrent err:', err.message); }
 
     try {
       const res = await this._clientSocket1.readHoldingRegisters(REG_POWER_L1, 8);
       const b   = res.response._body.valuesAsBuffer;
-      await this._setCapSafe('measure_power.L1', this._clean(parseFloat32(b, 0)));
-      await this._setCapSafe('measure_power.L2', this._clean(parseFloat32(b, 4)));
-      await this._setCapSafe('measure_power.L3', this._clean(parseFloat32(b, 8)));
+      await this._setCapSafe('charger_power_l1', this._clean(parseFloat32(b, 0)));
+      await this._setCapSafe('charger_power_l2', this._clean(parseFloat32(b, 4)));
+      await this._setCapSafe('charger_power_l3', this._clean(parseFloat32(b, 8)));
       await this._setCapSafe('measure_power',    this._clean(parseFloat32(b, 12)));
     } catch (err) { this.log('pollPower err:', err.message); }
 
@@ -730,65 +621,38 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     } catch (err) { this.log('pollEnergy err:', err.message); }
   }
 
-  // ── Write operations ──────────────────────────────────────────────────────
-
   // ── Pause / resume ───────────────────────────────────────────────────────
-  //
-  // Pausing sets the charge current to PAUSE_CURRENT_A (5 A). At this level
-  // the IEC 61851 pilot signal stays active (session intact) but the current
-  // is below the IEC 61851 minimum (6A) so the car stops drawing power.
-  //
-  // The LB calculation returns PAUSE_CURRENT_A immediately when _paused=true,
-  // so the keepalive timer keeps writing 3 A and the Alfen validity timer
-  // never expires. On resume the pre-pause setpoint is restored and LB
-  // immediately recalculates using the current grid data.
-
   async _pauseCharging() {
-    if (this._paused) return; // already paused
-
-    // Save current setpoint so resume can restore it
+    if (this._paused) return;
     this._prePauseSetpointA = this._lbSetpointA;
     this._paused            = true;
-
     this.log(`Charging paused — writing ${PAUSE_CURRENT_A} A`);
-
     if (this._socketConnected) {
       await this._writeMaxCurrentRaw(PAUSE_CURRENT_A);
       await this._setCapSafe('max_current', PAUSE_CURRENT_A);
     }
     this._lbSetpointA = PAUSE_CURRENT_A;
-
     await this._setCapSafe('evcharger_charging', false);
-
-    // Fire pause trigger
     this.homey.flow.getDeviceTriggerCard('charging_paused')
       .trigger(this).catch(this.error.bind(this));
   }
 
   async _resumeCharging() {
-    if (!this._paused) return; // not paused
-
+    if (!this._paused) return;
     this._paused = false;
     this.log('Charging resumed');
-
-    // Restore pre-pause setpoint, then immediately recalculate
     if (this._prePauseSetpointA !== null) {
       this._lbSetpointA = this._prePauseSetpointA;
-      this._userMaxA    = this._prePauseSetpointA; // restore user max too
+      this._userMaxA    = this._prePauseSetpointA;
     }
     this._prePauseSetpointA = null;
-
-    // Recalculate immediately using current grid data (or setpoint if no meter)
     if (this._socketConnected) {
       const setpoint = this._calculateLbSetpoint();
       this._lbSetpointA = setpoint;
       await this._writeMaxCurrentRaw(setpoint);
       await this._setCapSafe('max_current', setpoint);
     }
-
     await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
-
-    // Fire resume trigger
     this.homey.flow.getDeviceTriggerCard('charging_resumed')
       .trigger(this).catch(this.error.bind(this));
   }
@@ -819,26 +683,20 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (!this._socketConnected) throw new Error(this.homey.__('errors.not_connected'));
     const cableMax = Number(this._settings.max_current_limit) || 16;
     if (amps < 6 || amps > cableMax) throw new Error(`Current must be 6–${cableMax} A`);
-
-    // Explicit current command always clears the pause state — the user is
-    // consciously overriding, so treat it as an implicit resume.
     if (this._paused) {
       this.log(`Direct current command (${amps} A) clears pause state`);
       this._paused            = false;
       this._prePauseSetpointA = null;
       await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
-
-      // Notify the user that the pause was cleared by a manual current change
       this.homey.notifications.createNotification({
         excerpt: this.homey.__('notifications.pause_cleared_by_slider', { amps }),
       }).catch(err => this.log('Notification error:', err.message));
     }
-
     await this._writeMaxCurrentRaw(amps);
     this._lbSetpointA = amps;
-    this._userMaxA    = amps; // remember as user's desired maximum
+    this._userMaxA    = amps;
     await this.delay(300);
-    const res  = await this._clientSocket1.readHoldingRegisters(REG_MAX_CURRENT_RW, 2);
+    const res = await this._clientSocket1.readHoldingRegisters(REG_MAX_CURRENT_RW, 2);
     await this._setCapSafe('max_current', this._clean(parseFloat32(res.response._body.valuesAsBuffer)));
   }
 
@@ -856,7 +714,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
   async _setCapSafe(cap, value) {
     try {
       if (!this.hasCapability(cap) || this.getCapabilityValue(cap) === value) return;
@@ -872,7 +729,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   delay(ms) { return new Promise(r => this.homey.setTimeout(r, ms)); }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
-
   async onAdded() { this.log('Device added:', this.getData().id); }
 
   async onDeleted() {

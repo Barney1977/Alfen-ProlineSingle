@@ -1,0 +1,16 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Voltage L3",
+    "nl": "Spanning L3"
+  },
+  "units": {
+    "en": "V",
+    "nl": "V"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

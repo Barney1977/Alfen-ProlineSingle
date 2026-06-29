@@ -1,0 +1,16 @@
+{
+  "type": "number",
+  "title": {
+    "en": "Voltage L2",
+    "nl": "Spanning L2"
+  },
+  "units": {
+    "en": "V",
+    "nl": "V"
+  },
+  "decimals": 1,
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor"
+}

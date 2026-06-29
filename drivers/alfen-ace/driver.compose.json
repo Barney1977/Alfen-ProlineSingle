@@ -37,16 +37,16 @@
     "evcharger_charging_state",
     "evcharger_charging",
     "measure_power",
-    "measure_power.L1",
-    "measure_power.L2",
-    "measure_power.L3",
+    "charger_power_l1",
+    "charger_power_l2",
+    "charger_power_l3",
     "meter_power",
-    "measure_voltage.L1",
-    "measure_voltage.L2",
-    "measure_voltage.L3",
-    "measure_current.L1",
-    "measure_current.L2",
-    "measure_current.L3",
+    "charger_voltage_l1",
+    "charger_voltage_l2",
+    "charger_voltage_l3",
+    "charger_current_l1",
+    "charger_current_l2",
+    "charger_current_l3",
     "max_current",
     "actual_max_current",
     "safe_current",
@@ -60,60 +60,6 @@
       "title": {
         "en": "Total charge power",
         "nl": "Totaal laadvermogen"
-      }
-    },
-    "measure_power.L1": {
-      "title": {
-        "en": "Power L1",
-        "nl": "Vermogen L1"
-      }
-    },
-    "measure_power.L2": {
-      "title": {
-        "en": "Power L2",
-        "nl": "Vermogen L2"
-      }
-    },
-    "measure_power.L3": {
-      "title": {
-        "en": "Power L3",
-        "nl": "Vermogen L3"
-      }
-    },
-    "measure_voltage.L1": {
-      "title": {
-        "en": "Voltage L1",
-        "nl": "Spanning L1"
-      }
-    },
-    "measure_voltage.L2": {
-      "title": {
-        "en": "Voltage L2",
-        "nl": "Spanning L2"
-      }
-    },
-    "measure_voltage.L3": {
-      "title": {
-        "en": "Voltage L3",
-        "nl": "Spanning L3"
-      }
-    },
-    "measure_current.L1": {
-      "title": {
-        "en": "Current L1",
-        "nl": "Stroom L1"
-      }
-    },
-    "measure_current.L2": {
-      "title": {
-        "en": "Current L2",
-        "nl": "Stroom L2"
-      }
-    },
-    "measure_current.L3": {
-      "title": {
-        "en": "Current L3",
-        "nl": "Stroom L3"
       }
     },
     "evcharger_charging": {

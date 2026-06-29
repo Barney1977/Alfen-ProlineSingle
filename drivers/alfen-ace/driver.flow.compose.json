@@ -1,28 +1,6 @@
 {
   "triggers": [
     {
-      "id": "charging_started",
-      "title": {
-        "en": "Charging started",
-        "nl": "Laden gestart"
-      },
-      "hint": {
-        "en": "Triggered when the EV transitions to an active charging state (C1 or C2).",
-        "nl": "Wordt geactiveerd als het voertuig begint met laden (C1 of C2)."
-      }
-    },
-    {
-      "id": "charging_stopped",
-      "title": {
-        "en": "Charging stopped",
-        "nl": "Laden gestopt"
-      },
-      "hint": {
-        "en": "Triggered when the EV transitions out of an active charging state.",
-        "nl": "Wordt geactiveerd als het voertuig stopt met laden."
-      }
-    },
-    {
       "id": "car_connected",
       "title": {
         "en": "Car connected",
