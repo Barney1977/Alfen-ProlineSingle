@@ -7,5 +7,8 @@
   },
   "1.0.2": {
     "en": "fixed issues for publishing"
+  },
+  "1.1.0": {
+    "en": "Deleted double flows, adjustment of app image and app description"
   }
 }
