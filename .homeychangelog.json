@@ -10,5 +10,8 @@
   },
   "1.1.0": {
     "en": "Deleted double flows, adjustment of app image and app description"
+  },
+  "1.1.1": {
+    "en": "removed text from app image"
   }
 }
