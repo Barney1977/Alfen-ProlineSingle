@@ -1,4 +1,4 @@
-Deze app verbindt je Alfen Eve Single laadpaal (met ACE-module) via Modbus TCP met Homey. De app leest real-time de laadstatus, het vermogen per fase, de spanning en de geleverde energie, en geeft je directe controle over de laadstroom en het aantal actieve fasen vanuit Homey.
+Deze app verbindt je Alfen Eve Single laadpaal (met ACE-module) via Modbus TCP met Homey. De app leest real-time de laadstatus, het vermogen per fase, de spanning en de geleverde energie, en geeft je directe controle over de laadstroom en het aantal actieve fasen vanuit Homey.Ook kun je laden met alleen het overschot aan zonne-energie.
 
 De app beschikt over automatische laadbalancering: in combinatie met een compatibele energiemeter in Homey past de app de laadstroom continu aan op basis van het actuele verbruik in huis, zodat je altijd onder de hoofdzekering blijft. Neemt het verbruik toe, dan verlaagt de app de laadstroom automatisch. Daalt het verbruik, dan wordt de stroom weer verhoogd.
 

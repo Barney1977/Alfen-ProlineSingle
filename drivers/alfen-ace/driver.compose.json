@@ -34,7 +34,6 @@
     }
   ],
   "capabilities": [
-    "evcharger_charging_state",
     "evcharger_charging",
     "measure_power",
     "charger_power_l1",

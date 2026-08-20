@@ -1,4 +1,4 @@
-This app connects your Alfen Eve Single EV charger (with ACE module) to Homey via Modbus TCP. It reads real-time charging status, power usage per phase, voltage, and energy delivered, and lets you control the charging current and number of active phases directly from Homey.
+This app connects your Alfen Eve Single EV charger (with ACE module) to Homey via Modbus TCP. It reads real-time charging status, power usage per phase, voltage, and energy delivered, and lets you control the charging current and number of active phases directly from Homey.also you can charge with only available solar-energy
 
 The app includes automatic load balancing: when combined with a compatible energy meter in Homey, it continuously adjusts the charging current to stay within your main fuse limits. When your household consumption rises, the app reduces the charging current automatically. When consumption drops, it increases it again.
 
