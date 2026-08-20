@@ -138,10 +138,10 @@
           "type": "number",
           "name": "current",
           "placeholder": {
-            "en": "Current in Ampere (6\u201332)",
-            "nl": "Stroom in Amp\u00e8re (6\u201332)"
+            "en": "Current in Ampere (1-32)",
+            "nl": "Stroom in Amp\u00e8re (1-32)"
           },
-          "min": 6,
+          "min": 1,
           "max": 32,
           "step": 1
         }

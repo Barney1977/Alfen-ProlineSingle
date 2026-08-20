@@ -335,11 +335,20 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
     const noDataYet = this._gridLastUpdateMs === null && this._meterConfigured;
 
-    if (dataStale || noDataYet) {
-      if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
-      if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
-      return 6;
+    // WORDT (geen ingreep als al onder 6A, anders veilig terug naar 6A):
+if (dataStale || noDataYet) {
+    const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
+    if (currentSetpoint <= 6) {
+        // Al op of onder het veilige niveau — geen ingreep nodig
+        if (dataStale) this.log(`Grid data stale — already at ${currentSetpoint} A (≤ 6 A safe), no change needed`);
+        if (noDataYet) this.log(`Awaiting first grid measurement — holding at ${currentSetpoint} A`);
+        return currentSetpoint;
     }
+    // Boven 6A en geen meter-data meer — terugval naar veilig niveau
+    if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
+    if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
+    return 6;
+}
 
     const userMax = this._userMaxA !== null
       ? Math.min(this._userMaxA, cableMax)
@@ -682,7 +691,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async _writeMaxCurrentDirect(amps) {
     if (!this._socketConnected) throw new Error(this.homey.__('errors.not_connected'));
     const cableMax = Number(this._settings.max_current_limit) || 16;
-    if (amps < 6 || amps > cableMax) throw new Error(`Current must be 6–${cableMax} A`);
+    if (amps < 1 || amps > cableMax) throw new Error(`Current must be 1–${cableMax} A`);
     if (this._paused) {
       this.log(`Direct current command (${amps} A) clears pause state`);
       this._paused            = false;

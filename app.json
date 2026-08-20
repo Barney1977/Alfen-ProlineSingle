@@ -234,7 +234,7 @@
               "en": "Current in Ampere (6–32)",
               "nl": "Stroom in Ampère (6–32)"
             },
-            "min": 6,
+            "min": 1,
             "max": 32,
             "step": 1
           }
@@ -828,7 +828,7 @@
         "nl": "A"
       },
       "decimals": 0,
-      "min": 6,
+      "min": 1,
       "max": 32,
       "step": 1,
       "getable": true,

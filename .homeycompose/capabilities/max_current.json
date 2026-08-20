@@ -5,15 +5,12 @@
     "nl": "Laadvermogen"
   },
   "desc": {
-    "en": "Maximum charge current setpoint written via Modbus. Range is 6 A up to the hardware maximum configured in device settings.",
-    "nl": "Maximale laadstroom ingesteld via Modbus. Bereik is 6 A tot het hardware maximum ingesteld in de apparaatinstellingen."
+    "en": "Maximum charge current setpoint written via Modbus. Range is 1 A up to the hardware maximum configured in device settings.",
+    "nl": "Maximale laadstroom ingesteld via Modbus. Bereik is 1 A tot het hardware maximum ingesteld in de apparaatinstellingen."
   },
-  "units": {
-    "en": "A",
-    "nl": "A"
-  },
+  "units": { "en": "A", "nl": "A" },
   "decimals": 0,
-  "min": 6,
+  "min": 1,
   "max": 32,
   "step": 1,
   "getable": true,
