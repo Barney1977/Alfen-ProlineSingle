@@ -68,7 +68,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   async onInit() {
     this.log(`Device init: ${this.getName()} (${this.getData().id})`);
-    this._solarModeEnabled = false;
+
     this._settings = this.getSettings();
 
     await this._setCapSafe('meter_active', false);
@@ -112,6 +112,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._validTimeCountdown = null;
     this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 };
     this._meterCapInstances = [];
+    this._solarModeEnabled  = false;
 
     this._applyCurrentLimits();
     this._validateLbInterval();
@@ -150,18 +151,15 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._pauseCharging();
       }
     });
-	this.registerCapabilityListener('solar_mode', async enabled => {
-     this._solarModeEnabled = enabled;
-     this.log(`Solar mode ${enabled ? 'enabled' : 'disabled'}`);
-     if (enabled && this._gridCurrentA) {
-    await this._handleSolarMode();
-  }
-  if (!enabled && this._paused) {
-    // optioneel: hervat laden bij uitschakelen solar mode
-  }
-});
     this.registerCapabilityListener('charge_phases', async value => {
       await this._writePhases(Number(value));
+    });
+    this.registerCapabilityListener('solar_mode', async enabled => {
+      this._solarModeEnabled = enabled;
+      this.log(`Solar mode ${enabled ? 'enabled' : 'disabled'}`);
+      if (enabled && this._gridCurrentA.L1 !== null) {
+        await this._handleSolarMode();
+      }
     });
 
     // ── Flow actions ─────────────────────────────────────────────────────────
@@ -307,7 +305,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           this._setCapSafe('meter_active', true).catch(() => {});
           this.log('Meter data received — warning cleared');
         }
-        this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
+        if (this._solarModeEnabled) {
+          this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
+        } else {
+          this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
+        }
       });
       this._meterCapInstances.push(instance);
     }
@@ -345,20 +347,17 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
     const noDataYet = this._gridLastUpdateMs === null && this._meterConfigured;
 
-    // WORDT (geen ingreep als al onder 6A, anders veilig terug naar 6A):
-if (dataStale || noDataYet) {
-    const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
-    if (currentSetpoint <= 6) {
-        // Al op of onder het veilige niveau — geen ingreep nodig
+    if (dataStale || noDataYet) {
+      const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
+      if (currentSetpoint <= 6) {
         if (dataStale) this.log(`Grid data stale — already at ${currentSetpoint} A (≤ 6 A safe), no change needed`);
         if (noDataYet) this.log(`Awaiting first grid measurement — holding at ${currentSetpoint} A`);
         return currentSetpoint;
+      }
+      if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
+      if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
+      return 6;
     }
-    // Boven 6A en geen meter-data meer — terugval naar veilig niveau
-    if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
-    if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
-    return 6;
-}
 
     const userMax = this._userMaxA !== null
       ? Math.min(this._userMaxA, cableMax)
@@ -385,36 +384,37 @@ if (dataStale || noDataYet) {
     if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${chargerA} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
-async _handleSolarMode() {
-  if (!this._solarModeEnabled) return;
-  const phases   = Number(this._settings.grid_phases)       || 3;
-  const cableMax = Number(this._settings.max_current_limit) || 16;
 
-  // Negatieve netstroom = terugleverng = overschot
-  const surplusL1 = -(this._gridCurrentA.L1 || 0);
-  const surplusL2 = phases === 3 ? -(this._gridCurrentA.L2 || 0) : surplusL1;
-  const surplusL3 = phases === 3 ? -(this._gridCurrentA.L3 || 0) : surplusL1;
-  const surplus   = phases === 1
-    ? surplusL1
-    : Math.min(surplusL1, surplusL2, surplusL3);
+  // ── Solar surplus mode ────────────────────────────────────────────────────
+  async _handleSolarMode() {
+    if (!this._solarModeEnabled) return;
+    const phases   = Number(this._settings.grid_phases)       || 3;
+    const cableMax = Number(this._settings.max_current_limit) || 16;
 
-  this.log(`Solar surplus: ${surplus.toFixed(1)} A`);
+    // Negatieve netstroom = teruglevering = overschot
+    const surplusL1 = -(this._gridCurrentA.L1 || 0);
+    const surplusL2 = phases === 3 ? -(this._gridCurrentA.L2 || 0) : surplusL1;
+    const surplusL3 = phases === 3 ? -(this._gridCurrentA.L3 || 0) : surplusL1;
+    const surplus   = phases === 1
+      ? surplusL1
+      : Math.min(surplusL1, surplusL2, surplusL3);
 
-  if (surplus < 2) {
-    if (!this._paused) {
-      this.log('Solar: surplus < 2 A — pausing charging');
-      await this._pauseCharging();
+    this.log(`Solar surplus: ${surplus.toFixed(1)} A`);
+
+    if (surplus < 2) {
+      if (!this._paused) {
+        this.log('Solar: surplus < 2 A — pausing charging');
+        await this._pauseCharging();
+      }
+    } else {
+      const target = Math.min(Math.round(surplus), cableMax);
+      if (this._paused) await this._resumeCharging();
+      await this._writeMaxCurrentRaw(target);
+      await this._setCapSafe('max_current', target);
+      this._lbSetpointA = target;
+      this.log(`Solar: setting charge current to ${target} A`);
     }
-  } else {
-    const target = Math.min(Math.round(surplus), cableMax);
-    if (this._paused) {
-      await this._resumeCharging();
-    }
-    await this._writeMaxCurrentRaw(target);
-    await this._setCapSafe('max_current', target);
-    this.log(`Solar: setting charge current to ${target} A`);
   }
-}
 
   async _recalculateAndWrite() {
     if (!this._socketConnected) return;
@@ -430,10 +430,11 @@ async _handleSolarMode() {
     this._gridCurrentA     = { L1: l1, L2: l2, L3: l3 };
     this._gridLastUpdateMs = Date.now();
     this._meterConfigured  = true;
-    await this._recalculateAndWrite();
     if (this._solarModeEnabled) {
-    await this._handleSolarMode();
-}
+      await this._handleSolarMode();
+    } else {
+      await this._recalculateAndWrite();
+    }
   }
 
   // ── LB keepalive timer ────────────────────────────────────────────────────
@@ -500,6 +501,7 @@ async _handleSolarMode() {
     }
 
     if (!this._socketConnected) return;
+    if (this._solarModeEnabled) return; // solar mode manages its own setpoint
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
     try {
@@ -607,8 +609,15 @@ async _handleSolarMode() {
       if (prev !== null) {
         if (!isCarConnected(prev) && isCarConnected(mode3))
           this.homey.flow.getDeviceTriggerCard('car_connected').trigger(this).catch(this.error.bind(this));
-        if (isCarConnected(prev) && !isCarConnected(mode3))
+        if (isCarConnected(prev) && !isCarConnected(mode3)) {
           this.homey.flow.getDeviceTriggerCard('car_disconnected').trigger(this).catch(this.error.bind(this));
+          // Deactivate solar mode when car disconnects
+          if (this._solarModeEnabled) {
+            this._solarModeEnabled = false;
+            await this._setCapSafe('solar_mode', false);
+            this.log('Solar mode deactivated: car disconnected');
+          }
+        }
       }
       this._lastMode3 = mode3;
       await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(mode3));
@@ -760,7 +769,7 @@ async _handleSolarMode() {
   }
 
   _applyCurrentLimits() {
-    const hwMax = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 6), 32);
+    const hwMax = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 1), 32);
     this.setCapabilityOptions('max_current', { min: 1, max: hwMax, step: 1 })
       .catch(err => this.log('setCapabilityOptions err:', err.message));
   }
