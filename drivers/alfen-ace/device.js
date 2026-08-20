@@ -68,7 +68,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   async onInit() {
     this.log(`Device init: ${this.getName()} (${this.getData().id})`);
-
+    this._solarModeEnabled = false;
     this._settings = this.getSettings();
 
     await this._setCapSafe('meter_active', false);
@@ -150,6 +150,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._pauseCharging();
       }
     });
+	this.registerCapabilityListener('solar_mode', async enabled => {
+     this._solarModeEnabled = enabled;
+     this.log(`Solar mode ${enabled ? 'enabled' : 'disabled'}`);
+     if (enabled && this._gridCurrentA) {
+    await this._handleSolarMode();
+  }
+  if (!enabled && this._paused) {
+    // optioneel: hervat laden bij uitschakelen solar mode
+  }
+});
     this.registerCapabilityListener('charge_phases', async value => {
       await this._writePhases(Number(value));
     });
@@ -375,6 +385,36 @@ if (dataStale || noDataYet) {
     if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${chargerA} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
+async _handleSolarMode() {
+  if (!this._solarModeEnabled) return;
+  const phases   = Number(this._settings.grid_phases)       || 3;
+  const cableMax = Number(this._settings.max_current_limit) || 16;
+
+  // Negatieve netstroom = terugleverng = overschot
+  const surplusL1 = -(this._gridCurrentA.L1 || 0);
+  const surplusL2 = phases === 3 ? -(this._gridCurrentA.L2 || 0) : surplusL1;
+  const surplusL3 = phases === 3 ? -(this._gridCurrentA.L3 || 0) : surplusL1;
+  const surplus   = phases === 1
+    ? surplusL1
+    : Math.min(surplusL1, surplusL2, surplusL3);
+
+  this.log(`Solar surplus: ${surplus.toFixed(1)} A`);
+
+  if (surplus < 2) {
+    if (!this._paused) {
+      this.log('Solar: surplus < 2 A — pausing charging');
+      await this._pauseCharging();
+    }
+  } else {
+    const target = Math.min(Math.round(surplus), cableMax);
+    if (this._paused) {
+      await this._resumeCharging();
+    }
+    await this._writeMaxCurrentRaw(target);
+    await this._setCapSafe('max_current', target);
+    this.log(`Solar: setting charge current to ${target} A`);
+  }
+}
 
   async _recalculateAndWrite() {
     if (!this._socketConnected) return;
@@ -391,6 +431,9 @@ if (dataStale || noDataYet) {
     this._gridLastUpdateMs = Date.now();
     this._meterConfigured  = true;
     await this._recalculateAndWrite();
+    if (this._solarModeEnabled) {
+    await this._handleSolarMode();
+}
   }
 
   // ── LB keepalive timer ────────────────────────────────────────────────────

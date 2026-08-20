@@ -369,6 +369,7 @@
         "evcharger_charging",
         "measure_power",
         "charger_power_l1",
+        "solar_mode",
         "charger_power_l2",
         "charger_power_l3",
         "meter_power",
@@ -886,6 +887,21 @@
       "setable": false,
       "insights": false,
       "uiComponent": "sensor"
+    },
+    "solar_mode": {
+      "type": "boolean",
+      "title": {
+        "en": "Solar surplus mode",
+        "nl": "Zonne-overschot modus"
+      },
+      "desc": {
+        "en": "When enabled, charge current automatically follows solar surplus. Pauses when surplus < 2 A.",
+        "nl": "Wanneer ingeschakeld wordt de laadstroom automatisch aangepast op het zonne-overschot. Pauzeert bij overschot < 2 A."
+      },
+      "getable": true,
+      "setable": true,
+      "insights": false,
+      "uiComponent": "toggle"
     },
     "station_max_current": {
       "type": "number",

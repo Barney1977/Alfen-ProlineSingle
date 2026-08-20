@@ -1,0 +1,15 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Solar surplus mode",
+    "nl": "Zonne-overschot modus"
+  },
+  "desc": {
+    "en": "When enabled, charge current automatically follows solar surplus. Pauses when surplus < 2 A.",
+    "nl": "Wanneer ingeschakeld wordt de laadstroom automatisch aangepast op het zonne-overschot. Pauzeert bij overschot < 2 A."
+  },
+  "getable": true,
+  "setable": true,
+  "insights": false,
+  "uiComponent": "toggle"
+}
