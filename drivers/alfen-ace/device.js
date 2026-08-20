@@ -718,7 +718,7 @@ if (dataStale || noDataYet) {
 
   _applyCurrentLimits() {
     const hwMax = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 6), 32);
-    this.setCapabilityOptions('max_current', { min: 6, max: hwMax, step: 1 })
+    this.setCapabilityOptions('max_current', { min: 1, max: hwMax, step: 1 })
       .catch(err => this.log('setCapabilityOptions err:', err.message));
   }
 
