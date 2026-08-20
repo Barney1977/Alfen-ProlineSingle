@@ -13,5 +13,8 @@
   },
   "1.1.1": {
     "en": "removed text from app image"
+  },
+  "1.1.2": {
+    "en": "adjust minimum A to charge lower then 6A"
   }
 }
