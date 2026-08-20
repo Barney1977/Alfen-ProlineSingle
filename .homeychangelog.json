@@ -19,5 +19,8 @@
   },
   "1.1.3": {
     "en": "add solar loading mode for charging EV only if >2A power goes to grid"
+  },
+  "1.1.4": {
+    "en": "adjustments for publishing"
   }
 }
