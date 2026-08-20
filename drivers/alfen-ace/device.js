@@ -356,7 +356,7 @@ if (dataStale || noDataYet) {
 
     if (!this._meterConfigured) {
       return this._lbSetpointA !== null
-        ? Math.max(6, Math.min(this._lbSetpointA, userMax))
+        ? Math.max(1, Math.min(this._lbSetpointA, userMax))
         : userMax;
     }
 
@@ -371,7 +371,7 @@ if (dataStale || noDataYet) {
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
 
-    const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
+    const clamped = Math.max(1, Math.min(Math.round(setpoint), userMax));
     if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${chargerA} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
