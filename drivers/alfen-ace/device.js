@@ -388,8 +388,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   // ── Solar surplus mode ────────────────────────────────────────────────────
   async _handleSolarMode() {
     if (!this._solarModeEnabled) return;
-    const phases   = Number(this._settings.grid_phases)       || 3;
-    const cableMax = Number(this._settings.max_current_limit) || 16;
+    const phases   = Number(this._settings.grid_phases)        || 3;
+    const cableMax = Number(this._settings.max_current_limit)  || 16;
+    const fuseA    = Number(this._settings.grid_fuse_A)         || 25;
+    const margin   = Number(this._settings.lb_safety_margin_A)  ||  1;
 
     // Negatieve netstroom = teruglevering = overschot
     const surplusL1 = -(this._gridCurrentA.L1 || 0);
@@ -399,20 +401,42 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       ? surplusL1
       : Math.min(surplusL1, surplusL2, surplusL3);
 
-    this.log(`Solar surplus: ${surplus.toFixed(1)} A`);
+    // Solar target: gewenst vermogen op basis van teruglevering
+    const solarTarget = Math.round(surplus);
 
-    if (surplus < 2) {
+    // LB-plafond: maximaal toelaatbaar op basis van zekering (totaal verbruik altijd leidend)
+    const fallbackA = this._lbSetpointA || 0;
+    const chargerA  = {
+      L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
+      L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : fallbackA,
+      L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : fallbackA,
+    };
+    const avail = phase => {
+      const measured = this._gridCurrentA[phase];
+      if (measured === null) return cableMax;
+      return fuseA - measured + (chargerA[phase] || 0) - margin;
+    };
+    const lbAvail = phases === 1
+      ? avail('L1')
+      : Math.min(avail('L1'), avail('L2'), avail('L3'));
+    const lbMax = Math.max(1, Math.min(Math.round(lbAvail), cableMax));
+
+    // Neem het minimum: solar stelt gewenst vermogen in, LB bewaakt de zekering
+    const target = Math.min(solarTarget, lbMax);
+
+    this.log(`Solar: overschot=${solarTarget} A  LB-max=${lbMax} A  doel=${target} A`);
+
+    if (surplus < 2 || target < 1) {
       if (!this._paused) {
-        this.log('Solar: surplus < 2 A — pausing charging');
+        this.log('Solar: onvoldoende overschot — pauzeer laden');
         await this._pauseCharging();
       }
     } else {
-      const target = Math.min(Math.round(surplus), cableMax);
       // Minimale wijziging ≈ 500 W / (230 V × fases) — voorkom kleine schommelingen
       const minChangeA = Math.max(1, Math.ceil(500 / (230 * phases)));
       const currentA   = this._paused ? null : this._lbSetpointA;
       if (!this._paused && currentA !== null && Math.abs(target - currentA) < minChangeA) {
-        this.log(`Solar: target ${target} A binnen drempel ${minChangeA} A (huidig ${currentA} A) — geen wijziging`);
+        this.log(`Solar: doel ${target} A binnen drempel ${minChangeA} A (huidig ${currentA} A) — geen wijziging`);
         return;
       }
       if (this._paused) await this._resumeCharging();
