@@ -533,8 +533,13 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     if (!this._socketConnected) return;
     if (this._solarModeEnabled) {
-      // Solar mode beheert het eigen setpoint, maar we moeten de Alfen-geldigheidstimer
-      // vernieuwen om te voorkomen dat de lader terugvalt naar de veilige waarde.
+      if (dataStale || !this._meterHasData) {
+        // Meterdata weggevallen — pauzeer laden als veiligheidsval
+        this.log('Solar keepalive: meterdata verlopen of ontbreekt — pauzeer laden');
+        if (!this._paused) await this._pauseCharging();
+        return;
+      }
+      // Vernieuw de Alfen-geldigheidstimer met het huidige solar-setpoint
       if (this._lbSetpointA !== null) {
         try {
           await this._writeMaxCurrentRaw(this._lbSetpointA);
@@ -798,6 +803,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (!this._socketConnected) throw new Error(this.homey.__('errors.not_connected'));
     const cableMax = Number(this._settings.max_current_limit) || 16;
     if (amps < 1 || amps > cableMax) throw new Error(`Current must be 1–${cableMax} A`);
+    if (this._solarModeEnabled) {
+      this.log('Handmatige aanpassing — solar mode uitgeschakeld');
+      this._solarModeEnabled = false;
+      await this._setCapSafe('solar_mode', false);
+      this.homey.notifications.createNotification({
+        excerpt: this.homey.__('notifications.solar_mode_disabled_by_slider', { amps }),
+      }).catch(err => this.log('Notification error:', err.message));
+    }
     if (this._paused) {
       this.log(`Direct current command (${amps} A) clears pause state`);
       this._paused            = false;
