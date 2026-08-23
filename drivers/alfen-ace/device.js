@@ -393,10 +393,17 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const fuseA    = Number(this._settings.grid_fuse_A)         || 25;
     const margin   = Number(this._settings.lb_safety_margin_A)  ||  1;
 
-    // Negatieve netstroom = teruglevering = overschot
-    const surplusL1 = -(this._gridCurrentA.L1 || 0);
-    const surplusL2 = phases === 3 ? -(this._gridCurrentA.L2 || 0) : surplusL1;
-    const surplusL3 = phases === 3 ? -(this._gridCurrentA.L3 || 0) : surplusL1;
+    // Werkelijk beschikbaar zonne-overschot = -netstroom + laderverbruik
+    // Door het laderverbruik op te tellen wordt de feedbacklus doorbroken:
+    // wat de lader verbruikt zit al in de netstroom — zonder correctie
+    // lijkt het overschot te krimpen zodra de lader start.
+    const surplusL1 = -(this._gridCurrentA.L1 || 0) + (this._chargerCurrentA.L1 || 0);
+    const surplusL2 = phases === 3
+      ? -(this._gridCurrentA.L2 || 0) + (this._chargerCurrentA.L2 || 0)
+      : surplusL1;
+    const surplusL3 = phases === 3
+      ? -(this._gridCurrentA.L3 || 0) + (this._chargerCurrentA.L3 || 0)
+      : surplusL1;
     const surplus   = phases === 1
       ? surplusL1
       : Math.min(surplusL1, surplusL2, surplusL3);
