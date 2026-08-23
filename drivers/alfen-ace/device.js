@@ -408,11 +408,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     } else {
       const target = Math.min(Math.round(surplus), cableMax);
+      // Minimale wijziging ≈ 500 W / (230 V × fases) — voorkom kleine schommelingen
+      const minChangeA = Math.max(1, Math.ceil(500 / (230 * phases)));
+      const currentA   = this._paused ? null : this._lbSetpointA;
+      if (!this._paused && currentA !== null && Math.abs(target - currentA) < minChangeA) {
+        this.log(`Solar: target ${target} A binnen drempel ${minChangeA} A (huidig ${currentA} A) — geen wijziging`);
+        return;
+      }
       if (this._paused) await this._resumeCharging();
       await this._writeMaxCurrentRaw(target);
       await this._setCapSafe('max_current', target);
       this._lbSetpointA = target;
-      this.log(`Solar: setting charge current to ${target} A`);
+      this.log(`Solar: laadvermogen ingesteld op ${target} A`);
     }
   }
 
@@ -501,7 +508,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     if (!this._socketConnected) return;
-    if (this._solarModeEnabled) return; // solar mode manages its own setpoint
+    if (this._solarModeEnabled) {
+      // Solar mode beheert het eigen setpoint, maar we moeten de Alfen-geldigheidstimer
+      // vernieuwen om te voorkomen dat de lader terugvalt naar de veilige waarde.
+      if (this._lbSetpointA !== null) {
+        try {
+          await this._writeMaxCurrentRaw(this._lbSetpointA);
+          if (LOG) this.log(`Solar keepalive schreef ${this._lbSetpointA} A`);
+        } catch (err) {
+          this.log(`Solar keepalive schrijffout: ${err.message}`);
+        }
+      }
+      return;
+    }
     const setpoint = this._calculateLbSetpoint();
     this._lbSetpointA = setpoint;
     try {
@@ -704,14 +723,25 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log('Charging resumed');
     if (this._prePauseSetpointA !== null) {
       this._lbSetpointA = this._prePauseSetpointA;
-      this._userMaxA    = this._prePauseSetpointA;
+      if (!this._solarModeEnabled) {
+        this._userMaxA = this._prePauseSetpointA;
+      }
     }
     this._prePauseSetpointA = null;
     if (this._socketConnected) {
-      const setpoint = this._calculateLbSetpoint();
-      this._lbSetpointA = setpoint;
-      await this._writeMaxCurrentRaw(setpoint);
-      await this._setCapSafe('max_current', setpoint);
+      if (this._solarModeEnabled) {
+        // Solar mode: herstel het setpoint van voor de pauze; de volgende meterwaarde
+        // stuurt _handleSolarMode() aan voor de correcte instelling.
+        const setpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
+        await this._writeMaxCurrentRaw(setpoint);
+        await this._setCapSafe('max_current', setpoint);
+      } else {
+        // Normale LB-modus: herbereken op basis van actuele netdata.
+        const setpoint = this._calculateLbSetpoint();
+        this._lbSetpointA = setpoint;
+        await this._writeMaxCurrentRaw(setpoint);
+        await this._setCapSafe('max_current', setpoint);
+      }
     }
     await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
     this.homey.flow.getDeviceTriggerCard('charging_resumed')
