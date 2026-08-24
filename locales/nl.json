@@ -28,7 +28,8 @@
     "meter_waiting_for_data": "Energiemeter gevonden maar nog geen metingen ontvangen. Controleer of de energiemeter online is en waarden rapporteert."
   },
   "notifications": {
-    "pause_cleared_by_slider": "Laadpauze opgeheven \u2014 laadstroom handmatig ingesteld op {amps} A."
+    "pause_cleared_by_slider": "Laadpauze opgeheven \u2014 laadstroom handmatig ingesteld op {amps} A.",
+    "solar_mode_disabled_by_slider": "Zonne-overschot modus uitgeschakeld — laadvermogen handmatig ingesteld op {{amps}} A"
   },
   "capabilities": {
     "meter_active": {

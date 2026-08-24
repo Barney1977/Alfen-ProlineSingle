@@ -369,6 +369,7 @@
         "measure_power",
         "charger_power_l1",
         "solar_mode",
+        "solar_min_charge_kw",
         "charger_power_l2",
         "charger_power_l3",
         "meter_power",
@@ -887,20 +888,45 @@
       "insights": false,
       "uiComponent": "sensor"
     },
-    "solar_mode": {
-      "type": "boolean",
-      "title": {
-        "en": "Solar mode",
-        "nl": "solar mode"
+    "setting_single_phase_solar": {
+      "id": "single_phase_solar",
+      "type": "checkbox",
+      "label": {
+        "en": "Allow 1-phase solar charging (below 4.1 kW)",
+        "nl": "1-fase zonneladen toestaan (onder 4,1 kW)"
       },
-      "desc": {
-        "en": "When enabled, charge current automatically follows solar surplus. Pauses when surplus < 2 A.",
-        "nl": "Wanneer ingeschakeld wordt de laadstroom automatisch aangepast op het zonne-overschot. Pauzeert bij overschot < 2 A."
+      "hint": {
+        "en": "When enabled, the charger automatically switches to single-phase below 4.1 kW. Only relevant for 3-phase connections.",
+        "nl": "Indien ingeschakeld schakelt de lader automatisch naar 1-fase onder 4,1 kW. Alleen relevant bij 3-fase aansluiting."
+      },
+      "value": false
+    },
+    "solar_min_charge_kw": {
+      "type": "number",
+      "title": {
+        "en": "Minimum charge speed (kW)",
+        "nl": "Minimale laadsnelheid (kW)"
       },
       "getable": true,
       "setable": true,
-      "insights": false,
-      "uiComponent": "toggle"
+      "uiComponent": "slider",
+      "min": 1.4,
+      "max": 22.1,
+      "step": 0.1,
+      "units": "kW",
+      "decimals": 1,
+      "insights": false
+    },
+    "solar_mode": {
+      "type": "boolean",
+      "title": {
+        "en": "Solar surplus charging",
+        "nl": "Zonne-overschot laden"
+      },
+      "getable": true,
+      "setable": true,
+      "uiComponent": "toggle",
+      "insights": false
     },
     "station_max_current": {
       "type": "number",

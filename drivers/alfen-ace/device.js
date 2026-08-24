@@ -81,6 +81,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       lb_enabled:          true,
       lb_interval:           30,
       lb_safety_margin_A:     1,
+      single_phase_solar:  false,
     };
     const missingSettings = {};
     for (const [key, defaultVal] of Object.entries(settingDefaults)) {
@@ -112,7 +113,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._validTimeCountdown = null;
     this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 };
     this._meterCapInstances = [];
-    this._solarModeEnabled  = false;
+    this._solarModeEnabled      = false;
+    this._solarMinChargeKw      = this.hasCapability('solar_min_charge_kw')
+      ? (this.getCapabilityValue('solar_min_charge_kw') || 0)
+      : 0;
+    this._activeChargePhases    = null;  // wordt bij eerste solar-cyclus ingesteld
+    this._lastPhaseSwitchMs     = 0;
 
     this._applyCurrentLimits();
     this._validateLbInterval();
@@ -156,8 +162,20 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     });
     this.registerCapabilityListener('solar_mode', async enabled => {
       this._solarModeEnabled = enabled;
-      this.log(`Solar mode ${enabled ? 'enabled' : 'disabled'}`);
-      if (enabled && this._gridCurrentA.L1 !== null) {
+      this.log(`Solar mode ${enabled ? 'ingeschakeld' : 'uitgeschakeld'}`);
+      if (!enabled) {
+        // Reset fase-tracking zodat volgende sessie opnieuw bepaalt
+        this._activeChargePhases = null;
+        this._lastPhaseSwitchMs  = 0;
+      } else if (this._gridCurrentA.L1 !== null) {
+        await this._handleSolarMode();
+      }
+    });
+    this.registerCapabilityListener('solar_min_charge_kw', async value => {
+      this._solarMinChargeKw = value;
+      const phases = Number(this._settings.grid_phases) || 3;
+      this.log(`Solar minimale laadsnelheid: ${value} kW (${(value * 1000 / (phases * 230)).toFixed(1)} A/fase)`);
+      if (this._solarModeEnabled && this._gridCurrentA.L1 !== null) {
         await this._handleSolarMode();
       }
     });
@@ -349,13 +367,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     if (dataStale || noDataYet) {
       const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
-      if (currentSetpoint <= 6) {
-        if (dataStale) this.log(`Grid data stale — already at ${currentSetpoint} A (≤ 6 A safe), no change needed`);
-        if (noDataYet) this.log(`Awaiting first grid measurement — holding at ${currentSetpoint} A`);
+      if (noDataYet) {
+        // Nooit meterdata ontvangen: handhaaf huidige instelling zonder cap.
+        // Terugval naar 6 A zou een handmatige sliderinstelling overschrijven.
+        this.log(`Wacht op eerste metermeting — huidige instelling ${currentSetpoint} A gehandhaafd`);
         return currentSetpoint;
       }
-      if (dataStale) this.log('Grid data stale — falling back to 6 A safe minimum');
-      if (noDataYet) this.log('Awaiting first grid measurement — holding at 6 A');
+      // Meterdata was actief maar is verlopen → veiligheidsval naar 6 A
+      if (currentSetpoint <= 6) {
+        this.log(`Meterdata verlopen — al op ${currentSetpoint} A (≤ 6 A veilig), geen wijziging`);
+        return currentSetpoint;
+      }
+      this.log('Meterdata verlopen — terugval naar 6 A veiligheidsniveau');
       return 6;
     }
 
@@ -388,30 +411,56 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   // ── Solar surplus mode ────────────────────────────────────────────────────
   async _handleSolarMode() {
     if (!this._solarModeEnabled) return;
-    const phases   = Number(this._settings.grid_phases)        || 3;
-    const cableMax = Number(this._settings.max_current_limit)  || 16;
-    const fuseA    = Number(this._settings.grid_fuse_A)         || 25;
-    const margin   = Number(this._settings.lb_safety_margin_A)  ||  1;
+    const gridPhases = Number(this._settings.grid_phases)       || 3;
+    const cableMax   = Number(this._settings.max_current_limit) || 16;
+    const fuseA      = Number(this._settings.grid_fuse_A)        || 25;
+    const margin     = Number(this._settings.lb_safety_margin_A) ||  1;
 
-    // Werkelijk beschikbaar zonne-overschot = -netstroom + laderverbruik
-    // Door het laderverbruik op te tellen wordt de feedbacklus doorbroken:
-    // wat de lader verbruikt zit al in de netstroom — zonder correctie
-    // lijkt het overschot te krimpen zodra de lader start.
-    const surplusL1 = -(this._gridCurrentA.L1 || 0) + (this._chargerCurrentA.L1 || 0);
-    const surplusL2 = phases === 3
-      ? -(this._gridCurrentA.L2 || 0) + (this._chargerCurrentA.L2 || 0)
-      : surplusL1;
-    const surplusL3 = phases === 3
-      ? -(this._gridCurrentA.L3 || 0) + (this._chargerCurrentA.L3 || 0)
-      : surplusL1;
-    const surplus   = phases === 1
-      ? surplusL1
-      : Math.min(surplusL1, surplusL2, surplusL3);
+    // ── Totaal solar overschot in kW (som over nettofases) ───────────────────
+    // surplus = -netstroom + laderverbruik = totale zonne-opwekking - huishoudlast
+    // Laderverbruik optellen breekt de feedbacklus: het zit al in de netstroom
+    let surplusW = 0;
+    for (let ph = 1; ph <= gridPhases; ph++) {
+      const key = `L${ph}`;
+      surplusW += (-(this._gridCurrentA[key] || 0) + (this._chargerCurrentA[key] || 0)) * 230;
+    }
+    const surplusKw = surplusW / 1000;
 
-    // Solar target: gewenst vermogen op basis van teruglevering
-    const solarTarget = Math.round(surplus);
+    // ── Gewenst laadvermogen in kW ────────────────────────────────────────────
+    const minimumKw = this._solarMinChargeKw;
+    const targetKw  = Math.max(minimumKw, surplusKw);
 
-    // LB-plafond: maximaal toelaatbaar op basis van zekering (totaal verbruik altijd leidend)
+    // ── Auto-switch fase (alleen bij 3-fase aansluiting én checkbox ingeschakeld) ──
+    const THREE_PHASE_MIN_KW = Math.round(6 * 3 * 230 / 100) / 10; // 4,1 kW
+    const canAutoSwitch = gridPhases === 3 && !!this._settings.single_phase_solar;
+    let activePhases = canAutoSwitch
+      ? (targetKw >= THREE_PHASE_MIN_KW ? 3 : 1)
+      : gridPhases;
+
+    // Hysterese: wacht minimaal 60 s voor fasewisseling
+    const currentPhases = this._activeChargePhases !== null ? this._activeChargePhases : gridPhases;
+    if (this._activeChargePhases === null) {
+      // Eerste run: stel fase in zonder hysterese
+      this._activeChargePhases = activePhases;
+      this._lastPhaseSwitchMs  = 0;
+      await this._writePhases(activePhases);
+    } else if (activePhases !== currentPhases) {
+      const elapsed = Date.now() - this._lastPhaseSwitchMs;
+      if (elapsed < 60000) {
+        this.log(`Solar: fasewisseling ${currentPhases}→${activePhases} uitgesteld (${Math.round((60000 - elapsed) / 1000)}s hysterese)`);
+        activePhases = currentPhases;
+      } else {
+        this.log(`Solar: schakel ${currentPhases}→${activePhases} fase laden`);
+        await this._writePhases(activePhases);
+        this._activeChargePhases = activePhases;
+        this._lastPhaseSwitchMs  = Date.now();
+      }
+    }
+
+    // ── Doel in A per fase voor actieve fase-modus ───────────────────────────
+    const targetA_raw = (targetKw * 1000) / (activePhases * 230);
+
+    // ── LB-plafond per fase (zekering altijd leidend) ────────────────────────
     const fallbackA = this._lbSetpointA || 0;
     const chargerA  = {
       L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
@@ -423,24 +472,24 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       if (measured === null) return cableMax;
       return fuseA - measured + (chargerA[phase] || 0) - margin;
     };
-    const lbAvail = phases === 1
+    const lbAvail = activePhases === 1
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
     const lbMax = Math.max(1, Math.min(Math.round(lbAvail), cableMax));
 
-    // Neem het minimum: solar stelt gewenst vermogen in, LB bewaakt de zekering
-    const target = Math.min(solarTarget, lbMax);
+    const target = Math.min(Math.round(targetA_raw), lbMax);
+    const targetTotalKw = (target * activePhases * 230 / 1000).toFixed(1);
 
-    this.log(`Solar: overschot=${solarTarget} A  LB-max=${lbMax} A  doel=${target} A`);
+    this.log(`Solar: overschot=${surplusKw.toFixed(1)} kW  minimum=${minimumKw.toFixed(1)} kW  fase=${activePhases}  doel=${target} A (${targetTotalKw} kW)  LB-max=${lbMax} A`);
 
-    if (surplus < 2 || target < 1) {
+    if (target < 1) {
       if (!this._paused) {
-        this.log('Solar: onvoldoende overschot — pauzeer laden');
+        this.log('Solar: doel < 1 A — pauzeer laden');
         await this._pauseCharging();
       }
     } else {
-      // Minimale wijziging ≈ 500 W / (230 V × fases) — voorkom kleine schommelingen
-      const minChangeA = Math.max(1, Math.ceil(500 / (230 * phases)));
+      // Minimale wijziging ≈ 500 W — voorkom kleine schommelingen
+      const minChangeA = Math.max(1, Math.ceil(500 / (activePhases * 230)));
       const currentA   = this._paused ? null : this._lbSetpointA;
       if (!this._paused && currentA !== null && Math.abs(target - currentA) < minChangeA) {
         this.log(`Solar: doel ${target} A binnen drempel ${minChangeA} A (huidig ${currentA} A) — geen wijziging`);
@@ -450,7 +499,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._writeMaxCurrentRaw(target);
       await this._setCapSafe('max_current', target);
       this._lbSetpointA = target;
-      this.log(`Solar: laadvermogen ingesteld op ${target} A`);
+      this.log(`Solar: laadvermogen ingesteld op ${target} A (${targetTotalKw} kW)`);
     }
   }
 
@@ -609,7 +658,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async onSettings({ newSettings, changedKeys }) {
     this._settings = newSettings;
 
-    if (changedKeys.includes('max_current_limit')) {
+    if (changedKeys.includes('max_current_limit') || changedKeys.includes('single_phase_solar')) {
       this._applyCurrentLimits();
       if (this._lbSetpointA !== null) {
         const hwMax = Number(this._settings.max_current_limit) || 16;
@@ -843,9 +892,23 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   _applyCurrentLimits() {
-    const hwMax = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 1), 32);
+    const hwMax  = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 1), 32);
+    const phases = Number(this._settings.grid_phases) || 3;
+    // Totaalvermogen: stroom × fases × 230 V (bijv. 16 A × 3 × 230 = 11,0 kW)
+    const maxKw  = Math.round(hwMax * phases * 230 / 100) / 10;
+    // IEC 61851 minimum afhankelijk van fase-instelling en checkbox:
+    // - 1-fase device of checkbox 'single_phase_solar' aan → 1,4 kW (6A × 1 × 230V)
+    // - 3-fase device zonder checkbox → 4,1 kW (6A × 3 × 230V)
+    const canSinglePhase = phases === 1 || !!this._settings.single_phase_solar;
+    const minKw = canSinglePhase
+      ? Math.round(6 * 1 * 230 / 100) / 10   // 1,4 kW
+      : Math.round(6 * 3 * 230 / 100) / 10;  // 4,1 kW
     this.setCapabilityOptions('max_current', { min: 1, max: hwMax, step: 1 })
       .catch(err => this.log('setCapabilityOptions err:', err.message));
+    if (this.hasCapability('solar_min_charge_kw')) {
+      this.setCapabilityOptions('solar_min_charge_kw', { min: minKw, max: maxKw, step: 0.1 })
+        .catch(err => this.log('setCapabilityOptions solar err:', err.message));
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
