@@ -19,9 +19,10 @@ Nadat je de lader hebt toegevoegd, open je de apparaatinstellingen via het tandw
 
 Stel onder Elektrische installatie in op hoeveel netstroom fasen je lader is aangesloten (1 of 3), wat de maximale stroom per fase is van je hoofdzekering (bijv. 25 A bij een 3x25 A aansluiting), en wat de maximale stroom is van je laadkabel of het hardwaretype van de lader. De laadbalancering en de laadstroom-schuifregelaar gaan nooit boven deze kabelgrens.
 
-Plak onder Energiemeter het Homey-apparaat-ID van je slimme energiemeter. Dit activeert de automatische laadbalancering. Het apparaat-ID vind je op developer.homey.app onder Apparaten. De meter moet stroom per fase (L1, L2, L3) als Homey-capability rapporteren. Compatibele meters zijn onder andere P1-slimme meters, Shelly EM/3EM, SMA Energy Meter en andere. Laat dit veld leeg als je de laadbalancering liever handmatig via een Flow beheert.
+Plak onder Energiemeter het Homey-apparaat-ID van je slimme energiemeter en activeer automatische laadbalancering. Het apparaat-ID vind je op developer.homey.app onder Apparaten. De meter moet stroom per fase (L1, L2, L3) als Homey-capability rapporteren. Compatibele meters zijn onder andere P1-slimme meters, Shelly EM/3EM, SMA Energy Meter en andere. Laat dit veld leeg als je de laadbalancering liever handmatig via een Flow beheert.
 
 Onder Laadbalancering moet de keepalive-instelling ingeschakeld blijven. Deze stuurt het berekende stroomsetpoint periodiek opnieuw naar de lader, zodat de Alfen validity timer niet afloopt en de lader niet terugvalt op een lagere veilige stroom. Het interval (standaard 30 seconden) moet korter zijn dan de Validity time die is ingesteld in de ACE Service Installer. De veiligheidsmarge (standaard 1 A) wordt per fase afgetrokken van de beschikbare stroom voordat de waarde naar de lader wordt geschreven, als compensatie voor de korte vertraging tussen een meting en de aanpassing. Een marge van 1 tot 2 A wordt voor de meeste installaties aanbevolen.
+Stel in of laden op 1 fase toegestaan is (ingeval het een 3 fase huisaansluiting betreft) als toegestaan zal bij gebruik van zonnestroom laad functie automatisch worden geschakeld naar 1 fase als minimaal laadvermogen onder 4,1kw wordt ingesteld.
 
 
 LAADBALANCERING ZONDER ENERGIEMETER

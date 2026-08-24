@@ -94,6 +94,116 @@
       }
     }
   },
+  "settings": [
+    {
+      "id": "grid_phases",
+      "type": "dropdown",
+      "label": {
+        "en": "Grid phases",
+        "nl": "Netfases"
+      },
+      "hint": {
+        "en": "Number of phases of the grid connection.",
+        "nl": "Aantal fases van de netaansluiting."
+      },
+      "value": "3",
+      "values": [
+        { "id": "1", "label": { "en": "1-phase", "nl": "1-fase" } },
+        { "id": "3", "label": { "en": "3-phase", "nl": "3-fase" } }
+      ]
+    },
+    {
+      "id": "grid_fuse_A",
+      "type": "number",
+      "label": {
+        "en": "Grid fuse (A)",
+        "nl": "Zekering (A)"
+      },
+      "hint": {
+        "en": "Maximum current per phase allowed by the grid fuse.",
+        "nl": "Maximale stroom per fase toegestaan door de zekering."
+      },
+      "value": 25
+    },
+    {
+      "id": "max_current_limit",
+      "type": "number",
+      "label": {
+        "en": "Charger cable max current (A)",
+        "nl": "Max laadkabelstroom (A)"
+      },
+      "hint": {
+        "en": "Maximum current supported by the charging cable (6–32 A).",
+        "nl": "Maximale stroom die de laadkabel ondersteunt (6–32 A)."
+      },
+      "value": 16
+    },
+    {
+      "id": "meter_device_id",
+      "type": "text",
+      "label": {
+        "en": "Energy meter device ID",
+        "nl": "Apparaat-ID energiemeter"
+      },
+      "hint": {
+        "en": "Homey device ID of the smart energy meter used for load balancing. Leave empty to disable.",
+        "nl": "Homey apparaat-ID van de slimme energiemeter voor loadbalancing. Leeg laten om uit te schakelen."
+      },
+      "value": ""
+    },
+    {
+      "id": "lb_enabled",
+      "type": "checkbox",
+      "label": {
+        "en": "Enable load balancing",
+        "nl": "Loadbalancing inschakelen"
+      },
+      "hint": {
+        "en": "Automatically limit charge current based on grid measurements.",
+        "nl": "Beperk laadstroom automatisch op basis van netmetingen."
+      },
+      "value": false
+    },
+    {
+      "id": "lb_interval",
+      "type": "number",
+      "label": {
+        "en": "Load balancing interval (s)",
+        "nl": "Loadbalancing interval (s)"
+      },
+      "hint": {
+        "en": "How often load balancing recalculates the charge current (10–300 s).",
+        "nl": "Hoe vaak loadbalancing de laadstroom herberekent (10–300 s)."
+      },
+      "value": 30
+    },
+    {
+      "id": "lb_safety_margin_A",
+      "type": "number",
+      "label": {
+        "en": "Load balancing safety margin (A)",
+        "nl": "Loadbalancing veiligheidsmarge (A)"
+      },
+      "hint": {
+        "en": "Current reserved as a safety buffer below the fuse limit.",
+        "nl": "Stroom gereserveerd als veiligheidsbuffer onder de zekeringsgrens."
+      },
+      "value": 1
+    },
+    {
+      "id": "single_phase_solar",
+      "type": "checkbox",
+      "label": {
+        "en": "Allow 1-phase solar charging (below 4.1 kW)",
+        "nl": "1-fase zonneladen toestaan (onder 4,1 kW)"
+      },
+      "hint": {
+        "en": "When enabled, the charger automatically switches to single-phase below 4.1 kW. Only relevant for 3-phase connections.",
+        "nl": "Indien ingeschakeld schakelt de lader automatisch naar 1-fase onder 4,1 kW. Alleen relevant bij 3-fase aansluiting."
+      },
+      "value": false
+    }
+  ],
   "images": {
     "small": "/drivers/alfen-ace/assets/small.png",
     "large": "/drivers/alfen-ace/assets/large.png"

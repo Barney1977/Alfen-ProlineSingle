@@ -425,11 +425,6 @@
           }
         }
       },
-      "images": {
-        "small": "/drivers/alfen-ace/assets/small.png",
-        "large": "/drivers/alfen-ace/assets/large.png"
-      },
-      "id": "alfen-ace",
       "settings": [
         {
           "id": "ip",
@@ -550,7 +545,7 @@
             "en": "When enabled, Homey periodically rewrites the calculated max current to prevent fallback to safe current (Alfen validity time = 60 s).",
             "nl": "Indien ingeschakeld schrijft Homey het berekende max stroom periodiek opnieuw naar de lader om terugval naar de veilige stroom te voorkomen (Alfen geldigheidstijd = 60 s)."
           },
-          "value": true
+          "value": false
         },
         {
           "id": "lb_interval",
@@ -595,8 +590,26 @@
             "max": 6,
             "step": 0.5
           }
+        },
+        {
+          "id": "single_phase_solar",
+          "type": "checkbox",
+          "label": {
+            "en": "Allow 1-phase solar charging (below 4.1 kW)",
+            "nl": "1-fase zonneladen toestaan (onder 4,1 kW)"
+          },
+          "hint": {
+            "en": "When enabled, the charger automatically switches to single-phase below 4.1 kW. Only relevant for 3-phase connections.",
+            "nl": "Indien ingeschakeld schakelt de lader automatisch naar 1-fase onder 4,1 kW. Alleen relevant bij 3-fase aansluiting."
+          },
+          "value": false
         }
-      ]
+      ],
+      "images": {
+        "small": "/drivers/alfen-ace/assets/small.png",
+        "large": "/drivers/alfen-ace/assets/large.png"
+      },
+      "id": "alfen-ace"
     }
   ],
   "capabilities": {
