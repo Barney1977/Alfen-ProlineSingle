@@ -22,5 +22,8 @@
   },
   "1.1.4": {
     "en": "adjustments for publishing"
+  },
+  "1.2.0": {
+    "en": "extension of solar charge function and set minimum charge power if solarcharge is active"
   }
 }
