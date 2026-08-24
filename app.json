@@ -888,19 +888,6 @@
       "insights": false,
       "uiComponent": "sensor"
     },
-    "setting_single_phase_solar": {
-      "id": "single_phase_solar",
-      "type": "checkbox",
-      "label": {
-        "en": "Allow 1-phase solar charging (below 4.1 kW)",
-        "nl": "1-fase zonneladen toestaan (onder 4,1 kW)"
-      },
-      "hint": {
-        "en": "When enabled, the charger automatically switches to single-phase below 4.1 kW. Only relevant for 3-phase connections.",
-        "nl": "Indien ingeschakeld schakelt de lader automatisch naar 1-fase onder 4,1 kW. Alleen relevant bij 3-fase aansluiting."
-      },
-      "value": false
-    },
     "solar_min_charge_kw": {
       "type": "number",
       "title": {
