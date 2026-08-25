@@ -25,5 +25,8 @@
   },
   "1.2.0": {
     "en": "extension of solar charge function and set minimum charge power if solarcharge is active"
+  },
+  "1.2.1": {
+    "en": "decrease time for reconnect measure.power reading"
   }
 }
