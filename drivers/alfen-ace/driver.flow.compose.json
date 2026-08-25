@@ -80,13 +80,17 @@
         "nl": "Netstroom bijwerken: L1 [[current_l1]] A, L2 [[current_l2]] A, L3 [[current_l3]] A"
       },
       "hint": {
-        "en": "Pass the current measured per phase from your energy meter (e.g. P1, smart meter, Shelly EM). Load balancing calculates: available = fuse_A \u2212 grid_A per phase, then sets the charger to min(available phases) minus safety margin. For 1-phase connections, only L1 is used.",
-        "nl": "Geef de per fase gemeten stroom door vanuit uw energiemeter (bijv. P1, slimme meter, Shelly EM). Laadbalancering berekent: beschikbaar = zekering_A \u2212 net_A per fase, en stelt de lader in op min(beschikbare fasen) minus veiligheidsmarge. Bij 1-fase gebruik alleen L1."
+        "en": "Pass the current measured per phase from your energy meter (e.g. P1, smart meter, Shelly EM). Load balancing calculates: available = fuse_A − grid_A per phase, then sets the charger to min(available phases) minus safety margin. For 1-phase connections, only L1 is used.",
+        "nl": "Geef de per fase gemeten stroom door vanuit uw energiemeter (bijv. P1, slimme meter, Shelly EM). Laadbalancering berekent: beschikbaar = zekering_A − net_A per fase, en stelt de lader in op min(beschikbare fasen) minus veiligheidsmarge. Bij 1-fase gebruik alleen L1."
       },
       "args": [
         {
           "type": "number",
           "name": "current_l1",
+          "title": {
+            "en": "L1 current (A)",
+            "nl": "L1 stroom (A)"
+          },
           "placeholder": {
             "en": "L1 current (A)",
             "nl": "L1 stroom (A)"
@@ -98,9 +102,13 @@
         {
           "type": "number",
           "name": "current_l2",
+          "title": {
+            "en": "L2 current (A)",
+            "nl": "L2 stroom (A)"
+          },
           "placeholder": {
-            "en": "L2 current (A) \u2014 0 if 1-phase",
-            "nl": "L2 stroom (A) \u2014 0 bij 1-fase"
+            "en": "L2 current (A) — 0 if 1-phase",
+            "nl": "L2 stroom (A) — 0 bij 1-fase"
           },
           "min": 0,
           "max": 100,
@@ -109,9 +117,13 @@
         {
           "type": "number",
           "name": "current_l3",
+          "title": {
+            "en": "L3 current (A)",
+            "nl": "L3 stroom (A)"
+          },
           "placeholder": {
-            "en": "L3 current (A) \u2014 0 if 1-phase",
-            "nl": "L3 stroom (A) \u2014 0 bij 1-fase"
+            "en": "L3 current (A) — 0 if 1-phase",
+            "nl": "L3 stroom (A) — 0 bij 1-fase"
           },
           "min": 0,
           "max": 100,
@@ -137,11 +149,15 @@
         {
           "type": "number",
           "name": "current",
-          "placeholder": {
-            "en": "Current in Ampere (1-32)",
-            "nl": "Stroom in Amp\u00e8re (1-32)"
+          "title": {
+            "en": "Current (A)",
+            "nl": "Stroom (A)"
           },
-          "min": 1,
+          "placeholder": {
+            "en": "Current in Ampere (6–32)",
+            "nl": "Stroom in Ampère (6–32)"
+          },
+          "min": 6,
           "max": 32,
           "step": 1
         }

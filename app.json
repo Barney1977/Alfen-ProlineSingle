@@ -176,6 +176,10 @@
           {
             "type": "number",
             "name": "current_l1",
+            "title": {
+              "en": "L1 current (A)",
+              "nl": "L1 stroom (A)"
+            },
             "placeholder": {
               "en": "L1 current (A)",
               "nl": "L1 stroom (A)"
@@ -187,6 +191,10 @@
           {
             "type": "number",
             "name": "current_l2",
+            "title": {
+              "en": "L2 current (A)",
+              "nl": "L2 stroom (A)"
+            },
             "placeholder": {
               "en": "L2 current (A) — 0 if 1-phase",
               "nl": "L2 stroom (A) — 0 bij 1-fase"
@@ -198,6 +206,10 @@
           {
             "type": "number",
             "name": "current_l3",
+            "title": {
+              "en": "L3 current (A)",
+              "nl": "L3 stroom (A)"
+            },
             "placeholder": {
               "en": "L3 current (A) — 0 if 1-phase",
               "nl": "L3 stroom (A) — 0 bij 1-fase"
@@ -231,11 +243,15 @@
           {
             "type": "number",
             "name": "current",
-            "placeholder": {
-              "en": "Current in Ampere (1-32)",
-              "nl": "Stroom in Ampère (1-32)"
+            "title": {
+              "en": "Current (A)",
+              "nl": "Stroom (A)"
             },
-            "min": 1,
+            "placeholder": {
+              "en": "Current in Ampere (6–32)",
+              "nl": "Stroom in Ampère (6–32)"
+            },
+            "min": 6,
             "max": 32,
             "step": 1
           }
