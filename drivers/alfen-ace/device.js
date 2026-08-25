@@ -803,6 +803,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
     this._lbSetpointA = PAUSE_CURRENT_A;
     await this._setCapSafe('evcharger_charging', false);
+    this.homey.notifications.createNotification({
+      excerpt: this.homey.__('notifications.charging_paused'),
+    }).catch(err => this.log('Notification error:', err.message));
     this.homey.flow.getDeviceTriggerCard('charging_paused')
       .trigger(this).catch(this.error.bind(this));
   }
@@ -834,6 +837,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     }
     await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
+    this.homey.notifications.createNotification({
+      excerpt: this.homey.__('notifications.charging_resumed'),
+    }).catch(err => this.log('Notification error:', err.message));
     this.homey.flow.getDeviceTriggerCard('charging_resumed')
       .trigger(this).catch(this.error.bind(this));
   }

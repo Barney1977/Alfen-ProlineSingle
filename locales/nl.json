@@ -5,13 +5,13 @@
     "ip": "IP-adres:",
     "port": "Modbus TCP poort:",
     "device_name": "Alfen ACE Lader",
-    "note": "Zorg dat Modbus TCP is ingeschakeld in de ACE Service Installer (Active Load Balancing \u2192 TCP/IP EMS). Poort 502, unit-adressen 1 (socket) en 200 (station) worden automatisch gebruikt.",
+    "note": "Zorg dat Modbus TCP is ingeschakeld in de ACE Service Installer (Active Load Balancing → TCP/IP EMS). Poort 502, unit-adressen 1 (socket) en 200 (station) worden automatisch gebruikt.",
     "next": "Volgende"
   },
   "device": {
-    "connecting": "Verbinding maken met lader\u2026",
+    "connecting": "Verbinding maken met lader…",
     "connected": "Verbonden",
-    "disconnected": "Verbinding verbroken \u2014 opnieuw verbinden",
+    "disconnected": "Verbinding verbroken — opnieuw verbinden",
     "charging_paused": "Laden gepauzeerd (3 A)",
     "charging_resumed": "Laden hervat"
   },
@@ -24,12 +24,14 @@
     "lb_interval_too_high": "Het laadbalancering interval is gelijk aan of groter dan de Alfen geldigheidstijd (60 s). De lader kan terugvallen op de veilige stroom.",
     "meter_device_not_found": "Energiemeter niet gevonden. Controleer het device ID in de instellingen.",
     "meter_capability_missing": "Energiemeter beschikt niet over measure_current.L1/L2/L3. Laadbalancering inactief.",
-    "meter_data_stale": "Energiemeter data is verouderd \u2014 geen update ontvangen binnen verwacht interval. Laadstroom teruggebracht naar 6 A veilig minimum.",
+    "meter_data_stale": "Energiemeter data is verouderd — geen update ontvangen binnen verwacht interval. Laadstroom teruggebracht naar 6 A veilig minimum.",
     "meter_waiting_for_data": "Energiemeter gevonden maar nog geen metingen ontvangen. Controleer of de energiemeter online is en waarden rapporteert."
   },
   "notifications": {
-    "pause_cleared_by_slider": "Laadpauze opgeheven \u2014 laadstroom handmatig ingesteld op {amps} A.",
-    "solar_mode_disabled_by_slider": "Zonne-overschot modus uitgeschakeld — laadvermogen handmatig ingesteld op {{amps}} A"
+    "pause_cleared_by_slider": "Laadpauze opgeheven — laadstroom handmatig ingesteld op {amps} A.",
+    "solar_mode_disabled_by_slider": "Zonne-overschot modus uitgeschakeld — laadvermogen handmatig ingesteld op {{amps}} A",
+    "charging_paused": "EV laden is gepauzeerd.",
+    "charging_resumed": "EV laden is hervat."
   },
   "capabilities": {
     "meter_active": {
