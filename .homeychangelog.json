@@ -28,5 +28,8 @@
   },
   "1.2.1": {
     "en": "decrease time for reconnect measure.power reading"
+  },
+  "1.2.2": {
+    "en": "fix notification in app"
   }
 }
