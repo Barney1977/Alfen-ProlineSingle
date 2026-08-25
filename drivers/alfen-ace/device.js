@@ -729,8 +729,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         }
       }
       this._lastMode3 = mode3;
-      await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(mode3));
       if (!this._paused) {
+        await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(mode3));
         await this._setCapSafe('evcharger_charging', isActivelyCharging(mode3));
       }
 
