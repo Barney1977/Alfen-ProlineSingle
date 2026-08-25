@@ -285,15 +285,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const numPhases = Number(this._settings.grid_phases) || 3;
-    const currentCaps = numPhases === 1
+    const wantedCaps = numPhases === 1
       ? ['measure_current.l1']
       : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
-    const caps = [...currentCaps, 'measure_power'];
+    const allCapKeys = Object.keys(meterDevice.capabilitiesObj || {});
+    // Case-insensitive match: Homey-standaard gebruikt hoofdletter L (measure_current.L1)
+    const resolvecap = name => allCapKeys.find(k => k.toLowerCase() === name) || null;
+    const currentCaps = wantedCaps.map(resolvecap).filter(Boolean);
+    const powerCap    = allCapKeys.find(k => k === 'measure_power') || null;
+    const available   = [...currentCaps, ...(powerCap ? [powerCap] : [])];
 
-    const available = caps.filter(cap => meterDevice.capabilitiesObj?.[cap] !== undefined);
     if (available.length === 0) {
-      this.log(`Meter device has none of: ${caps.join(', ')} — available current caps:`,
-        Object.keys(meterDevice.capabilitiesObj || {}).filter(c => c.includes('current') || c.includes('power')));
+      this.log(`Meter device has none of: ${wantedCaps.join(', ')} — available current caps:`,
+        allCapKeys.filter(c => c.toLowerCase().includes('current') || c.toLowerCase().includes('power')));
       this.setWarning(this.homey.__('warnings.meter_capability_missing')).catch(() => {});
       this._meterConfigured = true;
       this._meterHasData    = false;
@@ -307,15 +311,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.log(`Attaching meter listeners on '${meterDevice.name}' for: ${available.join(', ')}`);
 
     for (const cap of available) {
+      const capLower = cap.toLowerCase();
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
-        if (cap === 'measure_current.l1') this._gridCurrentA.L1 = value;
-        if (cap === 'measure_current.l2') this._gridCurrentA.L2 = value;
-        if (cap === 'measure_current.l3') this._gridCurrentA.L3 = value;
-        if (cap === 'measure_power') {
+        if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = value;
+        if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = value;
+        if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = value;
+        if (capLower === 'measure_power') {
           this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
         }
         this._gridLastUpdateMs = Date.now();
-        if (cap === 'measure_power') return;
+        if (capLower === 'measure_power') return;
         if (!this._meterHasData) {
           this._meterHasData = true;
           this._meterActive  = true;
@@ -578,7 +583,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const deviceId    = (this._settings.meter_device_id || '').trim();
-    const longStaleMs = 5 * 60 * 1000;
+    const longStaleMs = staleMs * 3; // re-attach na ~3 keepalive-cycli i.p.v. 5 min
     const longStale   = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > longStaleMs;
     const neverHadData = this._meterConfigured && !this._meterHasData;
