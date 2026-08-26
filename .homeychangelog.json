@@ -31,5 +31,8 @@
   },
   "1.2.2": {
     "en": "fix notification in app"
+  },
+  "1.2.3": {
+    "en": "fix reconnectatempts"
   }
 }
