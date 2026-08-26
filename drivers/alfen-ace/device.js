@@ -100,6 +100,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._lbTimer           = null;
     this._meterStatusTimer  = null;
     this._reconnecting      = false;
+    this._reconnectAttempts = 0;
     this._lastMode3         = null;
     this._lbSetpointA       = null;
     this._userMaxA          = null;
@@ -628,9 +629,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     return new Promise((resolve, reject) => {
       const { ip: host, port = 502 } = this._settings;
       this.log(`Connecting to ${host}:${port}`);
-      const timer     = this.homey.setTimeout(() => { this._socket.destroy(); reject(new Error('Connection timeout')); }, CONNECT_TIMEOUT_MS);
-      const onError   = err => { this.homey.clearTimeout(timer); this._socket.removeListener('connect', onConnect); reject(err); };
-      const onConnect = ()  => { this.homey.clearTimeout(timer); this._socket.removeListener('error', onError); resolve(); };
+      const cleanup = () => {
+        this.homey.clearTimeout(timer);
+        this._socket.removeListener('connect', onConnect);
+        this._socket.removeListener('error', onError);
+      };
+      const timer     = this.homey.setTimeout(() => { cleanup(); this._socket.destroy(); reject(new Error('Connection timeout')); }, CONNECT_TIMEOUT_MS);
+      const onError   = err => { cleanup(); reject(err); };
+      const onConnect = ()  => { cleanup(); resolve(); };
       this._socket.once('connect', onConnect);
       this._socket.once('error', onError);
       this._socket.connect(port, host);
