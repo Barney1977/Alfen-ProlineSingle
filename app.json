@@ -498,8 +498,8 @@
           "id": "grid_fuse_A",
           "type": "number",
           "label": {
-            "en": "Main fuse per phase (A)",
-            "nl": "Hoofdzekering per fase (A)"
+            "en": "Main fuse per phase",
+            "nl": "Hoofdzekering per fase"
           },
           "hint": {
             "en": "Rated current of the main fuse per phase (e.g. 25 A for a 3×25 A connection). Load balancing will never allow the charger to exceed this value per phase.",
@@ -520,8 +520,8 @@
           "id": "max_current_limit",
           "type": "number",
           "label": {
-            "en": "Charger cable max current (A)",
-            "nl": "Laadkabel maximale stroom (A)"
+            "en": "Charger cable max current",
+            "nl": "Laadkabel maximale stroom"
           },
           "hint": {
             "en": "Rated maximum current of the charging cable or charger hardware (e.g. 16 A). Upper limit for the charge current slider and load balancing output.",
@@ -568,8 +568,8 @@
           "id": "lb_interval",
           "type": "number",
           "label": {
-            "en": "Load balancing interval (s)",
-            "nl": "Laadbalancering interval (s)"
+            "en": "Load balancing interval",
+            "nl": "Laadbalancering interval"
           },
           "hint": {
             "en": "How often Homey rewrites the max current setpoint. Must be less than the Alfen validity time (default 60 s). Recommended: 30 s.",
@@ -590,8 +590,8 @@
           "id": "lb_safety_margin_A",
           "type": "number",
           "label": {
-            "en": "Safety margin per phase (A)",
-            "nl": "Veiligheidsmarge per fase (A)"
+            "en": "Safety margin per phase",
+            "nl": "Veiligheidsmarge per fase"
           },
           "hint": {
             "en": "Subtracted from available current per phase before writing to the charger. Covers the measurement latency window between two P1 meter updates. DSMR 5.0 meters update every 1 s (use 1–2 A). DSMR 4.x meters update every 10 s or with high-impact loads (use 3–4 A). A higher margin reduces overload risk but also reduces maximum charge current.",
