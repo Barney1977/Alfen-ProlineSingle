@@ -311,29 +311,44 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._setCapSafe('meter_active', false).catch(() => {});
     this.log(`Attaching meter listeners on '${meterDevice.name}' for: ${available.join(', ')}`);
 
+// Helper-functie om de waarde van een capability te verwerken
+const processCapabilityValue = (cap, value) => {
+  if (value === null || value === undefined) return;
+  const capLower = cap.toLowerCase();
+  if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = value;
+  if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = value;
+  if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = value;
+  if (capLower === 'measure_power') {
+    this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
+  }
+  this._gridLastUpdateMs = Date.now();
+  if (capLower === 'measure_power') return;
+  if (!this._meterHasData) {
+    this._meterHasData = true;
+    this._meterActive  = true;
+    this.unsetWarning().catch(() => {});
+    this._setCapSafe('meter_active', true).catch(() => {});
+    this.log('Meter data received — warning cleared');
+  }
+  if (this._solarModeEnabled) {
+    this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
+  } else {
+    this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
+  }
+};
+    
     for (const cap of available) {
-      const capLower = cap.toLowerCase();
+    // Direct de huidige waarde ophalen via capabilitiesObj[].value
+    try {
+      const initialValue = meterevice.capabilitiesObj[cap].value;
+      processCapabilityValue(cap, initialValue);
+    } catch (err) {
+      this.log(`Fout bij het ophalen van ${cap}:`, err.message);
+    }
+  
+    // Listener aanmaken voor toekomstige wijzigingen
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
-        if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = value;
-        if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = value;
-        if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = value;
-        if (capLower === 'measure_power') {
-          this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
-        }
-        this._gridLastUpdateMs = Date.now();
-        if (capLower === 'measure_power') return;
-        if (!this._meterHasData) {
-          this._meterHasData = true;
-          this._meterActive  = true;
-          this.unsetWarning().catch(() => {});
-          this._setCapSafe('meter_active', true).catch(() => {});
-          this.log('Meter data received — warning cleared');
-        }
-        if (this._solarModeEnabled) {
-          this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
-        } else {
-          this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
-        }
+        processCapabilityValue(cap, value);
       });
       this._meterCapInstances.push(instance);
     }
