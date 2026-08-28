@@ -775,6 +775,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         this.setWarning(msg).catch(() => {});
         throw new Error(msg);
       }
+      // Alle capabilities aanwezig — stuur succesmelding
+      this.homey.notifications.createNotification({
+        excerpt: this.homey.__('notifications.lb_enabled_ok'),
+      }).catch(err => this.log('Notification error:', err.message));
     }
 
     this._settings = newSettings;

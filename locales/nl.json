@@ -31,7 +31,8 @@
     "pause_cleared_by_slider": "Laadpauze opgeheven — laadstroom handmatig ingesteld op {amps} A.",
     "solar_mode_disabled_by_slider": "Zonne-overschot modus uitgeschakeld — laadvermogen handmatig ingesteld op {{amps}} A",
     "charging_paused": "EV laden is gepauzeerd.",
-    "charging_resumed": "EV laden is hervat."
+    "charging_resumed": "EV laden is hervat.",
+    "lb_enabled_ok": "Laadbalancering actief — alle vereiste energiemeter capabilities zijn beschikbaar."
   },
   "capabilities": {
     "meter_active": {

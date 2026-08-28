@@ -31,7 +31,8 @@
     "pause_cleared_by_slider": "Charging pause cleared — charge current manually set to {amps} A.",
     "solar_mode_disabled_by_slider": "Solar surplus mode disabled — charge current manually set to {{amps}} A",
     "charging_paused": "EV charging has been paused.",
-    "charging_resumed": "EV charging has resumed."
+    "charging_resumed": "EV charging has resumed.",
+    "lb_enabled_ok": "Load balancing active — all required meter capabilities are available."
   },
   "capabilities": {
     "meter_active": {
