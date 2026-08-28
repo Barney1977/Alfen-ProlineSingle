@@ -40,5 +40,8 @@
   },
   "1.2.5": {
     "en": "bug fix "
+  },
+  "1.2.6": {
+    "en": "reconnect method adjustment"
   }
 }
