@@ -43,5 +43,8 @@
   },
   "1.2.6": {
     "en": "reconnect method adjustment"
+  },
+  "1.2.7": {
+    "en": "add notification if loadbalancing succesfull is activated"
   }
 }
