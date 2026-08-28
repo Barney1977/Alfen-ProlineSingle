@@ -11,9 +11,7 @@
   "device": {
     "connecting": "Connecting to charger…",
     "connected": "Connected",
-    "disconnected": "Disconnected — reconnecting",
-    "charging_paused": "Charging paused (3 A)",
-    "charging_resumed": "Charging resumed"
+    "disconnected": "Disconnected — reconnecting"
   },
   "errors": {
     "ip_required": "IP address is required",

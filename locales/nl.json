@@ -11,9 +11,7 @@
   "device": {
     "connecting": "Verbinding maken met lader…",
     "connected": "Verbonden",
-    "disconnected": "Verbinding verbroken — opnieuw verbinden",
-    "charging_paused": "Laden gepauzeerd (3 A)",
-    "charging_resumed": "Laden hervat"
+    "disconnected": "Verbinding verbroken — opnieuw verbinden"
   },
   "errors": {
     "ip_required": "IP-adres is verplicht",

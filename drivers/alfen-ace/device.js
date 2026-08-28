@@ -114,6 +114,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._validTimeCountdown = null;
     this._chargerCurrentA   = { L1: 0, L2: 0, L3: 0 };
     this._meterCapInstances = [];
+    this._meterRefreshFn        = null;
     this._solarModeEnabled      = false;
     this._solarMinChargeKw      = this.hasCapability('solar_min_charge_kw')
       ? (this.getCapabilityValue('solar_min_charge_kw') || 0)
@@ -330,12 +331,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._setCapSafe('meter_active', false).catch(() => {});
     this.log(`Attaching meter listeners on '${meterDevice.name}' for: ${available.join(', ')}`);
 
+    const capEntries = [];
     for (const cap of available) {
       const capLower = cap.toLowerCase();
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
         this._applyMeterValue(capLower, value);
       });
       this._meterCapInstances.push(instance);
+      capEntries.push({ cap, capLower });
 
       // Lees de huidige waarde direct op — makeCapabilityInstance vuurt alleen bij wijzigingen.
       // Als een fase urenlang constant is, blijft de waarde anders op null staan.
@@ -345,6 +348,28 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         this._applyMeterValue(capLower, initialValue);
       }
     }
+
+    // Refresh-closure: houdt _gridLastUpdateMs actueel bij elke keepalive-cyclus.
+    // makeCapabilityInstance vuurt alleen bij wijzigingen; een constante fase-waarde zou
+    // anders na 2× lb_interval als verlopen worden gezien en meter_active op false zetten.
+    // Als de meter offline gaat levert getCapabilityValue() null → geen refresh → verlooptijd
+    // blijft van kracht en de veiligheidsval werkt gewoon.
+    this._meterRefreshFn = () => {
+      let anyFresh = false;
+      for (const { cap, capLower } of capEntries) {
+        const val = meterDevice.getCapabilityValue(cap);
+        if (val !== null && val !== undefined) {
+          if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = val;
+          if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = val;
+          if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = val;
+          if (capLower === 'measure_power') {
+            this._setCapSafe('grid_power', Math.round(val)).catch(() => {});
+          }
+          anyFresh = true;
+        }
+      }
+      if (anyFresh) this._gridLastUpdateMs = Date.now();
+    };
 
     this._meterConfigured = true;
     this.log(`Meter listeners active (${this._meterCapInstances.length} capabilities)`);
@@ -378,6 +403,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       try { inst.destroy(); } catch (_) {}
     }
     this._meterCapInstances = [];
+    this._meterRefreshFn    = null;
     this._meterHasData      = false;
     this._meterActive       = false;
     this._setCapSafe('meter_active', false).catch(() => {});
@@ -609,6 +635,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _restartLoadBalancing() { this._stopLoadBalancing(); this._startLoadBalancing(); }
 
   async _lbKeepalive() {
+    // Ververs meterwaarden van actieve listeners vóór de verloopcheck.
+    // makeCapabilityInstance vuurt alleen bij wijzigingen; zonder deze refresh zou een
+    // constante fase-waarde na 2× lb_interval als verlopen worden gezien.
+    if (this._meterRefreshFn) this._meterRefreshFn();
+
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
     const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
