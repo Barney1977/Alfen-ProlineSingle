@@ -342,7 +342,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
       // Lees de huidige waarde direct op — makeCapabilityInstance vuurt alleen bij wijzigingen.
       // Als een fase urenlang constant is, blijft de waarde anders op null staan.
-      const initialValue = meterDevice.getCapabilityValue(cap);
+      // HomeyAPI-apparaten hebben geen getCapabilityValue(); de waarde zit in capabilitiesObj[cap].value.
+      const capObj = (meterDevice.capabilitiesObj || {})[cap];
+      const initialValue = (capObj != null) ? capObj.value : null;
       if (initialValue !== null && initialValue !== undefined) {
         this.log(`Initial meter value ${cap}: ${initialValue}`);
         this._applyMeterValue(capLower, initialValue);
@@ -357,7 +359,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._meterRefreshFn = () => {
       let anyFresh = false;
       for (const { cap, capLower } of capEntries) {
-        const val = meterDevice.getCapabilityValue(cap);
+        const capObj2 = (meterDevice.capabilitiesObj || {})[cap];
+        const val = (capObj2 != null) ? capObj2.value : null;
         if (val !== null && val !== undefined) {
           if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = val;
           if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = val;
