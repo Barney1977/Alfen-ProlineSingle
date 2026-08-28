@@ -162,13 +162,32 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._writePhases(Number(value));
     });
     this.registerCapabilityListener('solar_mode', async enabled => {
+      if (enabled) {
+        // Controleer of per-fase stroomdata beschikbaar is
+        const phases = Number(this._settings.grid_phases) || 3;
+        const hasL1  = this._gridCurrentA.L1 !== null;
+        const hasAll = phases === 1
+          ? hasL1
+          : (hasL1 && this._gridCurrentA.L2 !== null && this._gridCurrentA.L3 !== null);
+
+        if (!hasAll) {
+          // Zet de schakelaar terug naar uit
+          await this._setCapSafe('solar_mode', false);
+          const msg = this.homey.__('warnings.solar_requires_phase_current');
+          this.log(`Solar mode geblokkeerd: per-fase stroomdata ontbreekt (L1=${this._gridCurrentA.L1}, L2=${this._gridCurrentA.L2}, L3=${this._gridCurrentA.L3})`);
+          this.setWarning(msg).catch(() => {});
+          return;
+        }
+      }
+
       this._solarModeEnabled = enabled;
       this.log(`Solar mode ${enabled ? 'ingeschakeld' : 'uitgeschakeld'}`);
       if (!enabled) {
         // Reset fase-tracking zodat volgende sessie opnieuw bepaalt
         this._activeChargePhases = null;
         this._lastPhaseSwitchMs  = 0;
-      } else if (this._gridCurrentA.L1 !== null) {
+        this.unsetWarning().catch(() => {});
+      } else {
         await this._handleSolarMode();
       }
     });
@@ -314,32 +333,44 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     for (const cap of available) {
       const capLower = cap.toLowerCase();
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
-        if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = value;
-        if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = value;
-        if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = value;
-        if (capLower === 'measure_power') {
-          this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
-        }
-        this._gridLastUpdateMs = Date.now();
-        if (capLower === 'measure_power') return;
-        if (!this._meterHasData) {
-          this._meterHasData = true;
-          this._meterActive  = true;
-          this.unsetWarning().catch(() => {});
-          this._setCapSafe('meter_active', true).catch(() => {});
-          this.log('Meter data received — warning cleared');
-        }
-        if (this._solarModeEnabled) {
-          this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
-        } else {
-          this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
-        }
+        this._applyMeterValue(capLower, value);
       });
       this._meterCapInstances.push(instance);
+
+      // Lees de huidige waarde direct op — makeCapabilityInstance vuurt alleen bij wijzigingen.
+      // Als een fase urenlang constant is, blijft de waarde anders op null staan.
+      const initialValue = meterDevice.getCapabilityValue(cap);
+      if (initialValue !== null && initialValue !== undefined) {
+        this.log(`Initial meter value ${cap}: ${initialValue}`);
+        this._applyMeterValue(capLower, initialValue);
+      }
     }
 
     this._meterConfigured = true;
     this.log(`Meter listeners active (${this._meterCapInstances.length} capabilities)`);
+  }
+
+  _applyMeterValue(capLower, value) {
+    if (capLower === 'measure_current.l1') this._gridCurrentA.L1 = value;
+    if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = value;
+    if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = value;
+    if (capLower === 'measure_power') {
+      this._setCapSafe('grid_power', Math.round(value)).catch(() => {});
+    }
+    this._gridLastUpdateMs = Date.now();
+    if (!this._meterHasData) {
+      this._meterHasData = true;
+      this._meterActive  = true;
+      this.unsetWarning().catch(() => {});
+      this._setCapSafe('meter_active', true).catch(() => {});
+      this.log('Meter data received — warning cleared');
+    }
+    if (capLower === 'measure_power') return;
+    if (this._solarModeEnabled) {
+      this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
+    } else {
+      this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
+    }
   }
 
   _destroyMeterListeners() {
@@ -523,6 +554,13 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._gridCurrentA     = { L1: l1, L2: l2, L3: l3 };
     this._gridLastUpdateMs = Date.now();
     this._meterConfigured  = true;
+    if (!this._meterHasData) {
+      this._meterHasData = true;
+      this._meterActive  = true;
+      this.unsetWarning().catch(() => {});
+      this._setCapSafe('meter_active', true).catch(() => {});
+      this.log('Flow action grid current — meter_active gezet op true');
+    }
     if (this._solarModeEnabled) {
       await this._handleSolarMode();
     } else {
@@ -666,7 +704,45 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }, delay);
   }
 
+  // ── Meter capability check voor load balancing ────────────────────────────
+  async _checkMeterCapabilities(deviceId, phases) {
+    const homeyApi = this.homey.app.homeyApi;
+    if (!homeyApi) return { ok: true, missing: [] }; // kan niet checken, laat door
+
+    let meterDevice;
+    try {
+      meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
+    } catch (_) {
+      return { ok: false, missing: [this.homey.__('warnings.meter_device_not_found')] };
+    }
+
+    const allCapKeys = Object.keys(meterDevice.capabilitiesObj || {});
+    const resolveCap = name => allCapKeys.find(k => k.toLowerCase() === name) || null;
+
+    const required = phases === 1
+      ? ['measure_current.l1']
+      : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
+
+    const missing = required.filter(cap => !resolveCap(cap));
+    return { ok: missing.length === 0, missing };
+  }
+
   async onSettings({ newSettings, changedKeys }) {
+    // ── Valideer meter capabilities als LB ingeschakeld wordt of meter-ID/fases wijzigt ──
+    const lbRelevant = changedKeys.some(k => ['lb_enabled', 'meter_device_id', 'grid_phases'].includes(k));
+    if (lbRelevant && newSettings.lb_enabled && (newSettings.meter_device_id || '').trim()) {
+      const check = await this._checkMeterCapabilities(
+        newSettings.meter_device_id.trim(),
+        Number(newSettings.grid_phases) || 3,
+      );
+      if (!check.ok) {
+        const missing = check.missing.join(', ');
+        const msg = this.homey.__('warnings.meter_capabilities_missing_lb', { missing });
+        this.setWarning(msg).catch(() => {});
+        throw new Error(msg);
+      }
+    }
+
     this._settings = newSettings;
 
     if (changedKeys.includes('max_current_limit') || changedKeys.includes('single_phase_solar')) {

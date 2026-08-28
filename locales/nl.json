@@ -25,7 +25,9 @@
     "meter_device_not_found": "Energiemeter niet gevonden. Controleer het device ID in de instellingen.",
     "meter_capability_missing": "Energiemeter beschikt niet over measure_current.L1/L2/L3. Laadbalancering inactief.",
     "meter_data_stale": "Energiemeter data is verouderd — geen update ontvangen binnen verwacht interval. Laadstroom teruggebracht naar 6 A veilig minimum.",
-    "meter_waiting_for_data": "Energiemeter gevonden maar nog geen metingen ontvangen. Controleer of de energiemeter online is en waarden rapporteert."
+    "meter_waiting_for_data": "Energiemeter gevonden maar nog geen metingen ontvangen. Controleer of de energiemeter online is en waarden rapporteert.",
+    "meter_capabilities_missing_lb": "Laadbalancering vereist per-fase stroommetingen. De geselecteerde meter mist: {{missing}}. Gebruik een meter die measure_current.L1 (en L2, L3 bij 3-fase) beschikbaar stelt, of laat het meter device ID leeg en gebruik de flow-actie.",
+    "solar_requires_phase_current": "Zonneladen vereist live per-fase stroommetingen (measure_current.L1/L2/L3). Er zijn nog geen gegevens ontvangen van de energiemeter. Zorg dat de meter is ingesteld en online is, en probeer het opnieuw."
   },
   "notifications": {
     "pause_cleared_by_slider": "Laadpauze opgeheven — laadstroom handmatig ingesteld op {amps} A.",

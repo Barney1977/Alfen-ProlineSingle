@@ -25,7 +25,9 @@
     "meter_device_not_found": "Energy meter device not found. Check the device ID in settings.",
     "meter_capability_missing": "Energy meter device does not expose measure_current.L1/L2/L3. Load balancing inactive.",
     "meter_data_stale": "Energy meter data is stale — no update received within expected interval. Charge current reduced to 6 A safe minimum.",
-    "meter_waiting_for_data": "Meter device found but no measurements received yet. Check that the energy meter is online and reporting values."
+    "meter_waiting_for_data": "Meter device found but no measurements received yet. Check that the energy meter is online and reporting values.",
+    "meter_capabilities_missing_lb": "Load balancing requires per-phase current measurements. The selected meter is missing: {{missing}}. Please use a meter that exposes measure_current.L1 (and L2, L3 for 3-phase) or leave the meter device ID empty and use the flow action instead.",
+    "solar_requires_phase_current": "Solar charging requires live per-phase current measurements (measure_current.L1/L2/L3). No data has been received yet from the energy meter. Make sure the meter is configured and online, then try again."
   },
   "notifications": {
     "pause_cleared_by_slider": "Charging pause cleared — charge current manually set to {amps} A.",
