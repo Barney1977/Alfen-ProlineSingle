@@ -29,7 +29,7 @@ const REG_CURRENT_L1          =  320;
 const REG_POWER_L1            =  338;
 const REG_ENERGY_SUM          =  374;
 
-const LOG = false;
+const LOG = true;
 
 // ─── Mode3 helpers ────────────────────────────────────────────────────────────
 function mode3ToChargingState(m) {
@@ -103,7 +103,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._reconnectAttempts = 0;
     this._lastMode3         = null;
     this._lbSetpointA       = null;
-    this._userMaxA          = null;
+    // Herstel opgeslagen gebruikerslimiet — blijft zo bewaard over herstarts heen.
+    const savedUserMaxA = this.getStoreValue('userMaxA');
+    this._userMaxA = (typeof savedUserMaxA === 'number' && savedUserMaxA >= 6)
+      ? savedUserMaxA : null;
     this._paused            = false;
     this._prePauseSetpointA = null;
     this._gridCurrentA      = { L1: null, L2: null, L3: null };
@@ -366,7 +369,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = val;
           if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = val;
           if (capLower === 'measure_power') {
-            this._setCapSafe('grid_power', Math.round(val)).catch(() => {});
+            // Forceer update ook als waarde gelijk is — zo blijft de Homey UI actueel.
+            if (this.hasCapability('grid_power')) {
+              this.setCapabilityValue('grid_power', Math.round(val)).catch(() => {});
+            }
           }
           anyFresh = true;
         }
@@ -419,7 +425,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const cableMax = Number(this._settings.max_current_limit)  || 16;
     const margin   = Number(this._settings.lb_safety_margin_A) ||  1;
     const phases   = Number(this._settings.grid_phases)        ||  3;
-    const fallbackA = this._lbSetpointA || 0;
+    // Fallback alleen toepassen als de auto daadwerkelijk aan het laden is (C2/D2).
+    // Als de auto niet verbonden is of pauzeert, is chargerA.Lx = 0 correct —
+    // anders wordt de ruimte op het net kunstmatig te hoog berekend.
+    const activelyCharging = isActivelyCharging(this._lastMode3);
+    const fallbackA = (activelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
     const chargerA  = {
       L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
       L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : fallbackA,
@@ -454,7 +464,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     if (!this._meterConfigured) {
       return this._lbSetpointA !== null
-        ? Math.max(1, Math.min(this._lbSetpointA, userMax))
+        ? Math.max(6, Math.min(this._lbSetpointA, userMax))
         : userMax;
     }
 
@@ -469,8 +479,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
 
-    const clamped = Math.max(1, Math.min(Math.round(setpoint), userMax));
-    if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${chargerA} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
+    // Minimum 6 A — onder het IEC 61851-minimum stopt de Alfen-lader de sessie.
+    // Als de beschikbare ruimte te klein is, geeft de keepalive 6 A terug; de lader
+    // blijft dan op minimaal vermogen laden in plaats van de sessie te beëindigen.
+    const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
+    if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${JSON.stringify(chargerA)} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
 
@@ -527,11 +540,13 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const targetA_raw = (targetKw * 1000) / (activePhases * 230);
 
     // ── LB-plafond per fase (zekering altijd leidend) ────────────────────────
-    const fallbackA = this._lbSetpointA || 0;
+    // Fallback alleen toepassen als de auto daadwerkelijk aan het laden is (C2/D2).
+    const solarActivelyCharging = isActivelyCharging(this._lastMode3);
+    const solarFallbackA = (solarActivelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
     const chargerA  = {
-      L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
-      L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : fallbackA,
-      L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : fallbackA,
+      L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : solarFallbackA,
+      L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : solarFallbackA,
+      L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : solarFallbackA,
     };
     const avail = phase => {
       const measured = this._gridCurrentA[phase];
@@ -541,7 +556,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const lbAvail = activePhases === 1
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
-    const lbMax = Math.max(1, Math.min(Math.round(lbAvail), cableMax));
+    // Minimum 6 A — IEC 61851 ondergrens voor actief laden
+    const lbMax = Math.max(6, Math.min(Math.round(lbAvail), cableMax));
 
     const target = Math.min(Math.round(targetA_raw), lbMax);
     const targetTotalKw = (target * activePhases * 230 / 1000).toFixed(1);
@@ -825,7 +841,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const res = await this._clientSocket1.readHoldingRegisters(REG_MODE3_BULK, 16);
       const b   = res.response._body.valuesAsBuffer;
 
-      this.unsetWarning().catch(() => {});
+      // Verwijder ALLEEN verbindingswaarschuwingen — LB/meter-warnings worden
+      // beheerd door _lbKeepalive en mogen hier niet worden gewist.
       const staleMs2    = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
       const dataIsStale = this._gridLastUpdateMs !== null
         && (Date.now() - this._gridLastUpdateMs) > staleMs2;
@@ -865,7 +882,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       if (this._lbSetpointA === null && maxCurrVal >= 6) {
         const hwMax = Number(this._settings.max_current_limit) || 16;
         this._lbSetpointA = Math.min(maxCurrVal, hwMax);
-        this._userMaxA    = Math.min(maxCurrVal, hwMax);
+        // _userMaxA bewust NIET initialiseren vanuit de charger-setpoint van de vorige sessie.
+        // _userMaxA blijft null totdat de gebruiker de slider handmatig aanpast.
+        // Zonder dit zou een vorige setpoint van bijv. 8 A de LB permanent op 8 A begrenzen.
       }
 
       await this._setCapSafe('safe_current', this._clean(parseFloat32(b, 24)));
@@ -1012,6 +1031,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._writeMaxCurrentRaw(amps);
     this._lbSetpointA = amps;
     this._userMaxA    = amps;
+    // Bewaar de gebruikerslimiet zodat die een herstart overleeft.
+    this.setStoreValue('userMaxA', amps).catch(err => this.log('setStoreValue userMaxA err:', err.message));
     await this.delay(300);
     const res = await this._clientSocket1.readHoldingRegisters(REG_MAX_CURRENT_RW, 2);
     await this._setCapSafe('max_current', this._clean(parseFloat32(res.response._body.valuesAsBuffer)));
