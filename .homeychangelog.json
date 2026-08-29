@@ -46,5 +46,8 @@
   },
   "1.2.7": {
     "en": "add notification if loadbalancing succesfull is activated"
+  },
+  "1.2.8": {
+    "en": "few small adjustments"
   }
 }
