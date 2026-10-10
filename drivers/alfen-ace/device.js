@@ -4,7 +4,7 @@ const Homey  = require('homey');
 const net    = require('net');
 const Modbus = require('jsmodbus');
 
-// ─── Timing ───────────────────────────────────────────────────────────────────
+// ─── Timing ───────────────────────────────────────────────────────────
 const POLL_INTERVAL_MS      = 30 * 1000;
 const RECONNECT_DELAY_MS    =  5 * 1000;
 const CONNECT_TIMEOUT_MS    =  8 * 1000;
@@ -16,7 +16,7 @@ const PAUSE_CURRENT_A       =  5;
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
 const UNIT_SOCKET1 =   1;
 
-// ─── Register addresses ───────────────────────────────────────────────────────
+// ─── Register addresses ──────────────────────────────────────────────────────
 const REG_MODE3_BULK          = 1200;
 const REG_ACTUAL_MAX_A        = 1206;
 const REG_VALID_TIME_LEFT     = 1208;
@@ -31,7 +31,7 @@ const REG_ENERGY_SUM          =  374;
 
 const LOG = true;
 
-// ─── Mode3 helpers ────────────────────────────────────────────────────────────
+// ─── Mode3 helpers ────────────────────────────────────────────────────────
 function mode3ToChargingState(m) {
   const s = (m || '').trim().toUpperCase();
   if (s === 'A' || s === 'E' || s === 'F') return 'plugged_out';
@@ -43,7 +43,7 @@ function mode3ToChargingState(m) {
 const isActivelyCharging = m => ['C2','D2'].includes((m||'').trim().toUpperCase());
 const isCarConnected     = m => ['B1','B2','C1','C2','D1','D2'].includes((m||'').trim().toUpperCase());
 
-// ─── Float helpers ────────────────────────────────────────────────────────────
+// ─── Float helpers ────────────────────────────────────────────────────────
 function parseFloat32(buf, offset = 0) {
   return buf.readFloatBE(offset);
 }
@@ -63,7 +63,7 @@ function parseString(buf, offset, numRegs) {
   return s.trim();
 }
 
-// ─── Device ───────────────────────────────────────────────────────────────────
+// ─── Device ──────────────────────────────────────────────────────────
 module.exports = class AlfenAceDevice extends Homey.Device {
 
   async onInit() {
@@ -156,6 +156,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._writeMaxCurrentDirect(value);
     });
     this.registerCapabilityListener('evcharger_charging', async value => {
+      this.log(`Pause state requested: ${value ? 'OFF' : 'ON'} (toggle from Homey UI)`);
       if (value) {
         await this._resumeCharging();
       } else {
@@ -166,6 +167,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._writePhases(Number(value));
     });
     this.registerCapabilityListener('solar_mode', async enabled => {
+      this.log(`Solar charging toggle requested: ${enabled ? 'ON' : 'OFF'}`);
       if (enabled) {
         // Controleer of per-fase stroomdata beschikbaar is
         const phases = Number(this._settings.grid_phases) || 3;
@@ -185,13 +187,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
 
       this._solarModeEnabled = enabled;
-      this.log(`Solar mode ${enabled ? 'ingeschakeld' : 'uitgeschakeld'}`);
+      this.log(`Solar charging state set to ${enabled ? 'ON' : 'OFF'}`);
       if (!enabled) {
         // Reset fase-tracking zodat volgende sessie opnieuw bepaalt
         this._activeChargePhases = null;
         this._lastPhaseSwitchMs  = 0;
         this.unsetWarning().catch(() => {});
+        this.homey.notifications.createNotification({
+          excerpt: this.homey.__('notifications.solar_mode_disabled'),
+        }).catch(err => this.log('Notification error:', err.message));
       } else {
+        this.homey.notifications.createNotification({
+          excerpt: this.homey.__('notifications.solar_mode_enabled'),
+        }).catch(err => this.log('Notification error:', err.message));
         await this._handleSolarMode();
       }
     });
@@ -204,7 +212,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     });
 
-    // ── Flow actions ─────────────────────────────────────────────────────────
+    // ── Flow actions ────────────────────────────────────────────────────────
     this.homey.flow
       .getActionCard('update_grid_current')
       .registerRunListener(async args => {
@@ -711,7 +719,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Connection ────────────────────────────────────────────────────────────
+  // ── Connection ─────────────────────────────────────────────────────────
   async _connect() {
     if (this._socketConnected) return;
     return new Promise((resolve, reject) => {
@@ -822,7 +830,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Polling ───────────────────────────────────────────────────────────────
+  // ── Polling ──────────────────────────────────────────────────────────
   _startPolling() {
     this._pollAll().catch(err => this.log('Initial poll error:', err.message));
     this._pollingTimer = this.homey.setInterval(async () => {
@@ -857,11 +865,27 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           this.homey.flow.getDeviceTriggerCard('car_connected').trigger(this).catch(this.error.bind(this));
         if (isCarConnected(prev) && !isCarConnected(mode3)) {
           this.homey.flow.getDeviceTriggerCard('car_disconnected').trigger(this).catch(this.error.bind(this));
-          // Deactivate solar mode when car disconnects
+          this.log('Car disconnected: clearing pause and solar charging');
+          if (this._paused) {
+            this._paused = false;
+            this._prePauseSetpointA = null;
+            this._lbSetpointA = null;
+            this.log('Car disconnected: pause state set to OFF');
+            this.homey.notifications.createNotification({
+              excerpt: this.homey.__('notifications.pause_cleared_on_disconnect'),
+            }).catch(err => this.log('Notification error:', err.message));
+            await this._setCapSafe('evcharger_charging', false);
+            await this._setCapSafe('evcharger_charging_state', 'plugged_out');
+          }
           if (this._solarModeEnabled) {
             this._solarModeEnabled = false;
+            this._activeChargePhases = null;
+            this._lastPhaseSwitchMs = 0;
             await this._setCapSafe('solar_mode', false);
-            this.log('Solar mode deactivated: car disconnected');
+            this.log('Car disconnected: solar charging state set to OFF');
+            this.homey.notifications.createNotification({
+              excerpt: this.homey.__('notifications.solar_mode_disabled_on_disconnect'),
+            }).catch(err => this.log('Notification error:', err.message));
           }
         }
       }
@@ -935,7 +959,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (this._paused) return;
     this._prePauseSetpointA = this._lbSetpointA;
     this._paused            = true;
-    this.log(`Charging paused — writing ${PAUSE_CURRENT_A} A`);
+    this.log('Pause state changed: ON');
     if (this._socketConnected) {
       await this._writeMaxCurrentRaw(PAUSE_CURRENT_A);
       await this._setCapSafe('max_current', PAUSE_CURRENT_A);
@@ -944,7 +968,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._setCapSafe('evcharger_charging', false);
     await this._setCapSafe('evcharger_charging_state', 'plugged_in_paused');
     this.homey.notifications.createNotification({
-      excerpt: this.homey.__('notifications.charging_paused'),
+      excerpt: this.homey.__('notifications.pause_enabled'),
     }).catch(err => this.log('Notification error:', err.message));
     this.homey.flow.getDeviceTriggerCard('charging_paused')
       .trigger(this).catch(this.error.bind(this));
@@ -953,7 +977,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async _resumeCharging() {
     if (!this._paused) return;
     this._paused = false;
-    this.log('Charging resumed');
+    this.log('Pause state changed: OFF');
     if (this._prePauseSetpointA !== null) {
       this._lbSetpointA = this._prePauseSetpointA;
       if (!this._solarModeEnabled) {
@@ -979,7 +1003,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
     await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(this._lastMode3));
     this.homey.notifications.createNotification({
-      excerpt: this.homey.__('notifications.charging_resumed'),
+      excerpt: this.homey.__('notifications.pause_disabled'),
     }).catch(err => this.log('Notification error:', err.message));
     this.homey.flow.getDeviceTriggerCard('charging_resumed')
       .trigger(this).catch(this.error.bind(this));
@@ -1065,7 +1089,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────
   async _setCapSafe(cap, value) {
     try {
       if (!this.hasCapability(cap) || this.getCapabilityValue(cap) === value) return;
@@ -1080,7 +1104,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   delay(ms) { return new Promise(r => this.homey.setTimeout(r, ms)); }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────
   async onAdded() { this.log('Device added:', this.getData().id); }
 
   async onDeleted() {
@@ -1101,3 +1125,4 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._disconnect().catch(() => {});
   }
 };
+
