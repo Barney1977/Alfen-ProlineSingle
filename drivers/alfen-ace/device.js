@@ -72,6 +72,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._settings = this.getSettings();
 
     await this._setCapSafe('meter_active', false);
+    await this._setCapSafe('car_connected', false);
 
     const settingDefaults = {
       grid_phases:          '3',
@@ -103,6 +104,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._reconnectAttempts = 0;
     this._lastMode3         = null;
     this._lbSetpointA       = null;
+    this._carConnected      = false;
     // Herstel opgeslagen gebruikerslimiet — blijft zo bewaard over herstarts heen.
     const savedUserMaxA = this.getStoreValue('userMaxA');
     this._userMaxA = (typeof savedUserMaxA === 'number' && savedUserMaxA >= 6)
@@ -860,10 +862,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
       const mode3 = parseString(b, 2, 5) || 'A';
       const prev  = this._lastMode3;
+      const carConnected = isCarConnected(mode3);
       if (prev !== null) {
-        if (!isCarConnected(prev) && isCarConnected(mode3))
+        if (!isCarConnected(prev) && carConnected) {
+          this.log('Car connected');
           this.homey.flow.getDeviceTriggerCard('car_connected').trigger(this).catch(this.error.bind(this));
-        if (isCarConnected(prev) && !isCarConnected(mode3)) {
+        }
+        if (isCarConnected(prev) && !carConnected) {
+          this.log('Car disconnected');
           this.homey.flow.getDeviceTriggerCard('car_disconnected').trigger(this).catch(this.error.bind(this));
           this.log('Car disconnected: clearing pause and solar charging');
           if (this._paused) {
@@ -890,6 +896,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         }
       }
       this._lastMode3 = mode3;
+      this._carConnected = carConnected;
+      await this._setCapSafe('car_connected', carConnected);
       if (!this._paused) {
         await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(mode3));
         await this._setCapSafe('evcharger_charging', isActivelyCharging(mode3));

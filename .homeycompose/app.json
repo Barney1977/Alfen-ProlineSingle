@@ -72,6 +72,7 @@
       "capabilities": [
         "evcharger_charging_state",
         "evcharger_charging",
+        "car_connected",
         "measure_power",
         "measure_power.L1",
         "measure_power.L2",
@@ -148,6 +149,12 @@
           "title": {
             "en": "Current L3",
             "nl": "Stroom L3"
+          }
+        },
+        "car_connected": {
+          "title": {
+            "en": "Car connected",
+            "nl": "Auto aangesloten"
           }
         }
       },
@@ -278,8 +285,8 @@
                 "nl": "Energiemeter device ID"
               },
               "hint": {
-                "en": "Paste the Homey device ID of your energy meter here. Find it via Homey developer tools (https://developer.homey.app) or leave empty to use manual flow control. The device must expose measure_current.L1 (and L2, L3 for 3-phase).",
-                "nl": "Plak hier het Homey device ID van uw energiemeter. Te vinden via de Homey developer tools (https://developer.homey.app) of leeg laten voor handmatige flowsturing. Het device moet measure_current.L1 (en L2, L3 bij 3-fase) beschikbaar stellen."
+                "en": "Paste the Homey device ID of your energy meter here. Find it via Homey developer tools (https://developer.homey.app) or leave empty to use manual flow control. The device must expose measure_current.L1/L2/L3 for automatic load balancing.",
+                "nl": "Plak hier het Homey device ID van uw energiemeter. Te vinden via de Homey developer tools (https://developer.homey.app) of leeg laten voor handmatige flowsturing. Het device moet measure_current.L1/L2/L3 leveren voor automatische laadbalancering."
               },
               "value": ""
             }
@@ -336,8 +343,8 @@
                 "nl": "Veiligheidsmarge per fase (A)"
               },
               "hint": {
-                "en": "Subtracted from available current per phase before writing to the charger. Covers the measurement latency window between two P1 meter updates. DSMR 5.0 meters update every 1 s (use 1–2 A). DSMR 4.x meters update every 10 s or with high-impact loads (use 3–4 A). A higher margin reduces overload risk but also reduces maximum charge current.",
-                "nl": "Wordt per fase van de beschikbare stroom afgetrokken voordat naar de lader wordt geschreven. Dekt het meetvertragingsvenster tussen twee P1-meterupdates. DSMR 5.0 meters geven elke 1 s een update (gebruik 1–2 A). DSMR 4.x meters geven elke 10 s een update of bij grote plotselinge lasten (gebruik 3–4 A). Een hogere marge verkleint het risico op overbelasting maar beperkt ook de maximale laadstroom."
+                "en": "Subtracted from available current per phase before writing to the charger. Covers the measurement latency window between two P1 meter updates.",
+                "nl": "Wordt per fase van de beschikbare stroom afgetrokken voordat naar de lader wordt geschreven. Dekt het meetvertragingsvenster tussen twee P1-meterupdates."
               },
               "value": 1,
               "units": {
@@ -380,8 +387,8 @@
     "charge_phases": {
       "type": "enum",
       "title": {
-        "en": "Charge phases",
-        "nl": "Laadphases"
+        "en": "Number of phases",
+        "nl": "Aantal fases"
       },
       "desc": {
         "en": "Number of phases used for charging (1 or 3)",
@@ -408,29 +415,20 @@
       "insights": false,
       "uiComponent": "picker"
     },
-    "max_current": {
-      "type": "number",
+    "car_connected": {
+      "type": "boolean",
       "title": {
-        "en": "Max current setpoint",
-        "nl": "Max stroom instelling"
+        "en": "Vehicle connected",
+        "nl": "Auto aangesloten"
       },
       "desc": {
-        "en": "Maximum charge current setpoint written via Modbus. Range is 6 A up to the hardware maximum configured in device settings.",
-        "nl": "Maximale laadstroom ingesteld via Modbus. Bereik is 6 A tot het hardware maximum ingesteld in de apparaatinstellingen."
+        "en": "True when a vehicle is connected to the charger.",
+        "nl": "Waar wanneer een auto is aangesloten op de lader."
       },
-      "units": {
-        "en": "A",
-        "nl": "A"
-      },
-      "decimals": 0,
-      "min": 6,
-      "max": 32,
-      "step": 1,
       "getable": true,
-      "setable": true,
+      "setable": false,
       "insights": true,
-      "chartType": "stepLine",
-      "uiComponent": "slider"
+      "uiComponent": "sensor"
     },
     "mode3_state": {
       "type": "string",
@@ -505,7 +503,7 @@
       "decimals": 0,
       "getable": true,
       "setable": false,
-      "insights": false,
+      "insights": true,
       "uiComponent": "sensor"
     }
   }
