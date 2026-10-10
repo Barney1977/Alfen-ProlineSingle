@@ -1097,6 +1097,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._stopValidTimeCountdown();
     if (this._pollingTimer) { this.homey.clearInterval(this._pollingTimer); this._pollingTimer = null; }
     await this._disconnect().catch(() => {});
-  }
+  }  
 };
 
