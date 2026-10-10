@@ -73,6 +73,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     await this._setCapSafe('meter_active', false);
     await this._setCapSafe('car_connected', false);
+    await this._setCapSafe('charging_paused', false);
+    await this._setCapSafe('solar_mode_active', false);
 
     const settingDefaults = {
       grid_phases:          '3',
@@ -105,6 +107,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._lastMode3         = null;
     this._lbSetpointA       = null;
     this._carConnected      = false;
+    this._chargingPaused    = false;
+    this._solarModeActive   = false;
     // Herstel opgeslagen gebruikerslimiet — blijft zo bewaard over herstarts heen.
     const savedUserMaxA = this.getStoreValue('userMaxA');
     this._userMaxA = (typeof savedUserMaxA === 'number' && savedUserMaxA >= 6)
@@ -170,8 +174,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     });
     this.registerCapabilityListener('solar_mode', async enabled => {
       this.log(`Solar charging toggle requested: ${enabled ? 'ON' : 'OFF'}`);
+      this._solarModeEnabled = enabled;
+      this._solarModeActive = enabled;
+      await this._setCapSafe('solar_mode_active', enabled);
       if (enabled) {
-        // Controleer of per-fase stroomdata beschikbaar is
         const phases = Number(this._settings.grid_phases) || 3;
         const hasL1  = this._gridCurrentA.L1 !== null;
         const hasAll = phases === 1
@@ -179,7 +185,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           : (hasL1 && this._gridCurrentA.L2 !== null && this._gridCurrentA.L3 !== null);
 
         if (!hasAll) {
-          // Zet de schakelaar terug naar uit
+          this._solarModeEnabled = false;
+          this._solarModeActive = false;
+          await this._setCapSafe('solar_mode_active', false);
           await this._setCapSafe('solar_mode', false);
           const msg = this.homey.__('warnings.solar_requires_phase_current');
           this.log(`Solar mode geblokkeerd: per-fase stroomdata ontbreekt (L1=${this._gridCurrentA.L1}, L2=${this._gridCurrentA.L2}, L3=${this._gridCurrentA.L3})`);
@@ -188,10 +196,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         }
       }
 
-      this._solarModeEnabled = enabled;
       this.log(`Solar charging state set to ${enabled ? 'ON' : 'OFF'}`);
       if (!enabled) {
-        // Reset fase-tracking zodat volgende sessie opnieuw bepaalt
         this._activeChargePhases = null;
         this._lastPhaseSwitchMs  = 0;
         this.unsetWarning().catch(() => {});
@@ -323,7 +329,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       ? ['measure_current.l1']
       : ['measure_current.l1', 'measure_current.l2', 'measure_current.l3'];
     const allCapKeys = Object.keys(meterDevice.capabilitiesObj || {});
-    // Case-insensitive match: Homey-standaard gebruikt hoofdletter L (measure_current.L1)
     const resolvecap = name => allCapKeys.find(k => k.toLowerCase() === name) || null;
     const currentCaps = wantedCaps.map(resolvecap).filter(Boolean);
     const powerCap    = allCapKeys.find(k => k === 'measure_power') || null;
@@ -353,9 +358,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       this._meterCapInstances.push(instance);
       capEntries.push({ cap, capLower });
 
-      // Lees de huidige waarde direct op — makeCapabilityInstance vuurt alleen bij wijzigingen.
-      // Als een fase urenlang constant is, blijft de waarde anders op null staan.
-      // HomeyAPI-apparaten hebben geen getCapabilityValue(); de waarde zit in capabilitiesObj[cap].value.
       const capObj = (meterDevice.capabilitiesObj || {})[cap];
       const initialValue = (capObj != null) ? capObj.value : null;
       if (initialValue !== null && initialValue !== undefined) {
@@ -364,11 +366,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     }
 
-    // Refresh-closure: houdt _gridLastUpdateMs actueel bij elke keepalive-cyclus.
-    // makeCapabilityInstance vuurt alleen bij wijzigingen; een constante fase-waarde zou
-    // anders na 2× lb_interval als verlopen worden gezien en meter_active op false zetten.
-    // Als de meter offline gaat levert getCapabilityValue() null → geen refresh → verlooptijd
-    // blijft van kracht en de veiligheidsval werkt gewoon.
     this._meterRefreshFn = () => {
       let anyFresh = false;
       for (const { cap, capLower } of capEntries) {
@@ -379,7 +376,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           if (capLower === 'measure_current.l2') this._gridCurrentA.L2 = val;
           if (capLower === 'measure_current.l3') this._gridCurrentA.L3 = val;
           if (capLower === 'measure_power') {
-            // Forceer update ook als waarde gelijk is — zo blijft de Homey UI actueel.
             if (this.hasCapability('grid_power')) {
               this.setCapabilityValue('grid_power', Math.round(val)).catch(() => {});
             }
@@ -428,16 +424,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._setCapSafe('meter_active', false).catch(() => {});
   }
 
-  // ── Load balancing calculation ────────────────────────────────────────────
   _calculateLbSetpoint() {
     if (this._paused) return PAUSE_CURRENT_A;
     const fuseA    = Number(this._settings.grid_fuse_A)        || 25;
     const cableMax = Number(this._settings.max_current_limit)  || 16;
     const margin   = Number(this._settings.lb_safety_margin_A) ||  1;
     const phases   = Number(this._settings.grid_phases)        ||  3;
-    // Fallback alleen toepassen als de auto daadwerkelijk aan het laden is (C2/D2).
-    // Als de auto niet verbonden is of pauzeert, is chargerA.Lx = 0 correct —
-    // anders wordt de ruimte op het net kunstmatig te hoog berekend.
     const activelyCharging = isActivelyCharging(this._lastMode3);
     const fallbackA = (activelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
     const chargerA  = {
@@ -454,12 +446,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (dataStale || noDataYet) {
       const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
       if (noDataYet) {
-        // Nooit meterdata ontvangen: handhaaf huidige instelling zonder cap.
-        // Terugval naar 6 A zou een handmatige sliderinstelling overschrijven.
         this.log(`Wacht op eerste metermeting — huidige instelling ${currentSetpoint} A gehandhaafd`);
         return currentSetpoint;
       }
-      // Meterdata was actief maar is verlopen → veiligheidsval naar 6 A
       if (currentSetpoint <= 6) {
         this.log(`Meterdata verlopen — al op ${currentSetpoint} A (≤ 6 A veilig), geen wijziging`);
         return currentSetpoint;
@@ -489,15 +478,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
 
-    // Minimum 6 A — onder het IEC 61851-minimum stopt de Alfen-lader de sessie.
-    // Als de beschikbare ruimte te klein is, geeft de keepalive 6 A terug; de lader
-    // blijft dan op minimaal vermogen laden in plaats van de sessie te beëindigen.
     const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
     if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${JSON.stringify(chargerA)} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
 
-  // ── Solar surplus mode ────────────────────────────────────────────────────
   async _handleSolarMode() {
     if (!this._solarModeEnabled) return;
     const gridPhases = Number(this._settings.grid_phases)       || 3;
@@ -505,9 +490,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const fuseA      = Number(this._settings.grid_fuse_A)        || 25;
     const margin     = Number(this._settings.lb_safety_margin_A) ||  1;
 
-    // ── Totaal solar overschot in kW (som over nettofases) ───────────────────
-    // surplus = -netstroom + laderverbruik = totale zonne-opwekking - huishoudlast
-    // Laderverbruik optellen breekt de feedbacklus: het zit al in de netstroom
     let surplusW = 0;
     for (let ph = 1; ph <= gridPhases; ph++) {
       const key = `L${ph}`;
@@ -515,21 +497,17 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
     const surplusKw = surplusW / 1000;
 
-    // ── Gewenst laadvermogen in kW ────────────────────────────────────────────
     const minimumKw = this._solarMinChargeKw;
     const targetKw  = Math.max(minimumKw, surplusKw);
 
-    // ── Auto-switch fase (alleen bij 3-fase aansluiting én checkbox ingeschakeld) ──
-    const THREE_PHASE_MIN_KW = Math.round(6 * 3 * 230 / 100) / 10; // 4,1 kW
+    const THREE_PHASE_MIN_KW = Math.round(6 * 3 * 230 / 100) / 10;
     const canAutoSwitch = gridPhases === 3 && !!this._settings.single_phase_solar;
     let activePhases = canAutoSwitch
       ? (targetKw >= THREE_PHASE_MIN_KW ? 3 : 1)
       : gridPhases;
 
-    // Hysterese: wacht minimaal 60 s voor fasewisseling
     const currentPhases = this._activeChargePhases !== null ? this._activeChargePhases : gridPhases;
     if (this._activeChargePhases === null) {
-      // Eerste run: stel fase in zonder hysterese
       this._activeChargePhases = activePhases;
       this._lastPhaseSwitchMs  = 0;
       await this._writePhases(activePhases);
@@ -546,11 +524,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     }
 
-    // ── Doel in A per fase voor actieve fase-modus ───────────────────────────
     const targetA_raw = (targetKw * 1000) / (activePhases * 230);
-
-    // ── LB-plafond per fase (zekering altijd leidend) ────────────────────────
-    // Fallback alleen toepassen als de auto daadwerkelijk aan het laden is (C2/D2).
     const solarActivelyCharging = isActivelyCharging(this._lastMode3);
     const solarFallbackA = (solarActivelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
     const chargerA  = {
@@ -566,7 +540,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     const lbAvail = activePhases === 1
       ? avail('L1')
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
-    // Minimum 6 A — IEC 61851 ondergrens voor actief laden
     const lbMax = Math.max(6, Math.min(Math.round(lbAvail), cableMax));
 
     const target = Math.min(Math.round(targetA_raw), lbMax);
@@ -580,7 +553,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._pauseCharging();
       }
     } else {
-      // Minimale wijziging ≈ 500 W — voorkom kleine schommelingen
       const minChangeA = Math.max(1, Math.ceil(500 / (activePhases * 230)));
       const currentA   = this._paused ? null : this._lbSetpointA;
       if (!this._paused && currentA !== null && Math.abs(target - currentA) < minChangeA) {
@@ -623,7 +595,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── LB keepalive timer ────────────────────────────────────────────────────
   _lbIntervalMs() {
     const s = Math.max(LB_INTERVAL_MIN_S, Math.min(Number(this._settings.lb_interval) || LB_INTERVAL_DEFAULT_S, ALFEN_VALIDITY_TIME_S - 1));
     return s * 1000;
@@ -664,9 +635,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _restartLoadBalancing() { this._stopLoadBalancing(); this._startLoadBalancing(); }
 
   async _lbKeepalive() {
-    // Ververs meterwaarden van actieve listeners vóór de verloopcheck.
-    // makeCapabilityInstance vuurt alleen bij wijzigingen; zonder deze refresh zou een
-    // constante fase-waarde na 2× lb_interval als verlopen worden gezien.
     if (this._meterRefreshFn) this._meterRefreshFn();
 
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
@@ -682,7 +650,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const deviceId    = (this._settings.meter_device_id || '').trim();
-    const longStaleMs = staleMs * 3; // re-attach na ~3 keepalive-cycli i.p.v. 5 min
+    const longStaleMs = staleMs * 3;
     const longStale   = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > longStaleMs;
     const neverHadData = this._meterConfigured && !this._meterHasData;
@@ -694,12 +662,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (!this._socketConnected) return;
     if (this._solarModeEnabled) {
       if (dataStale || !this._meterHasData) {
-        // Meterdata weggevallen — pauzeer laden als veiligheidsval
         this.log('Solar keepalive: meterdata verlopen of ontbreekt — pauzeer laden');
         if (!this._paused) await this._pauseCharging();
         return;
       }
-      // Vernieuw de Alfen-geldigheidstimer met het huidige solar-setpoint
       if (this._lbSetpointA !== null) {
         try {
           await this._writeMaxCurrentRaw(this._lbSetpointA);
@@ -721,7 +687,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Connection ─────────────────────────────────────────────────────────
   async _connect() {
     if (this._socketConnected) return;
     return new Promise((resolve, reject) => {
@@ -764,10 +729,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }, delay);
   }
 
-  // ── Meter capability check voor load balancing ────────────────────────────
   async _checkMeterCapabilities(deviceId, phases) {
     const homeyApi = this.homey.app.homeyApi;
-    if (!homeyApi) return { ok: true, missing: [] }; // kan niet checken, laat door
+    if (!homeyApi) return { ok: true, missing: [] };
 
     let meterDevice;
     try {
@@ -788,7 +752,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async onSettings({ newSettings, changedKeys }) {
-    // ── Valideer meter capabilities als LB ingeschakeld wordt of meter-ID/fases wijzigt ──
     const lbRelevant = changedKeys.some(k => ['lb_enabled', 'meter_device_id', 'grid_phases'].includes(k));
     if (lbRelevant && newSettings.lb_enabled && (newSettings.meter_device_id || '').trim()) {
       const check = await this._checkMeterCapabilities(
@@ -801,7 +764,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         this.setWarning(msg).catch(() => {});
         throw new Error(msg);
       }
-      // Alle capabilities aanwezig — stuur succesmelding
       this.homey.notifications.createNotification({
         excerpt: this.homey.__('notifications.lb_enabled_ok'),
       }).catch(err => this.log('Notification error:', err.message));
@@ -832,7 +794,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Polling ──────────────────────────────────────────────────────────
   _startPolling() {
     this._pollAll().catch(err => this.log('Initial poll error:', err.message));
     this._pollingTimer = this.homey.setInterval(async () => {
@@ -851,8 +812,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const res = await this._clientSocket1.readHoldingRegisters(REG_MODE3_BULK, 16);
       const b   = res.response._body.valuesAsBuffer;
 
-      // Verwijder ALLEEN verbindingswaarschuwingen — LB/meter-warnings worden
-      // beheerd door _lbKeepalive en mogen hier niet worden gewist.
       const staleMs2    = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
       const dataIsStale = this._gridLastUpdateMs !== null
         && (Date.now() - this._gridLastUpdateMs) > staleMs2;
@@ -882,12 +841,15 @@ module.exports = class AlfenAceDevice extends Homey.Device {
             }).catch(err => this.log('Notification error:', err.message));
             await this._setCapSafe('evcharger_charging', false);
             await this._setCapSafe('evcharger_charging_state', 'plugged_out');
+            await this._setCapSafe('charging_paused', false);
           }
           if (this._solarModeEnabled) {
             this._solarModeEnabled = false;
+            this._solarModeActive = false;
             this._activeChargePhases = null;
             this._lastPhaseSwitchMs = 0;
             await this._setCapSafe('solar_mode', false);
+            await this._setCapSafe('solar_mode_active', false);
             this.log('Car disconnected: solar charging state set to OFF');
             this.homey.notifications.createNotification({
               excerpt: this.homey.__('notifications.solar_mode_disabled_on_disconnect'),
@@ -902,6 +864,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         await this._setCapSafe('evcharger_charging_state', mode3ToChargingState(mode3));
         await this._setCapSafe('evcharger_charging', isActivelyCharging(mode3));
       }
+      if (this._paused) {
+        await this._setCapSafe('charging_paused', true);
+      } else {
+        await this._setCapSafe('charging_paused', false);
+      }
+      if (this._solarModeEnabled) {
+        await this._setCapSafe('solar_mode_active', true);
+      } else {
+        await this._setCapSafe('solar_mode_active', false);
+      }
 
       await this._setCapSafe('actual_max_current', this._clean(parseFloat32(b, 12)));
 
@@ -914,9 +886,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       if (this._lbSetpointA === null && maxCurrVal >= 6) {
         const hwMax = Number(this._settings.max_current_limit) || 16;
         this._lbSetpointA = Math.min(maxCurrVal, hwMax);
-        // _userMaxA bewust NIET initialiseren vanuit de charger-setpoint van de vorige sessie.
-        // _userMaxA blijft null totdat de gebruiker de slider handmatig aanpast.
-        // Zonder dit zou een vorige setpoint van bijv. 8 A de LB permanent op 8 A begrenzen.
       }
 
       await this._setCapSafe('safe_current', this._clean(parseFloat32(b, 24)));
@@ -962,11 +931,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     } catch (err) { this.log('pollEnergy err:', err.message); }
   }
 
-  // ── Pause / resume ───────────────────────────────────────────────────────
   async _pauseCharging() {
     if (this._paused) return;
     this._prePauseSetpointA = this._lbSetpointA;
     this._paused            = true;
+    this._chargingPaused    = true;
+    await this._setCapSafe('charging_paused', true);
     this.log('Pause state changed: ON');
     if (this._socketConnected) {
       await this._writeMaxCurrentRaw(PAUSE_CURRENT_A);
@@ -985,6 +955,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async _resumeCharging() {
     if (!this._paused) return;
     this._paused = false;
+    this._chargingPaused = false;
+    await this._setCapSafe('charging_paused', false);
     this.log('Pause state changed: OFF');
     if (this._prePauseSetpointA !== null) {
       this._lbSetpointA = this._prePauseSetpointA;
@@ -995,13 +967,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._prePauseSetpointA = null;
     if (this._socketConnected) {
       if (this._solarModeEnabled) {
-        // Solar mode: herstel het setpoint van voor de pauze; de volgende meterwaarde
-        // stuurt _handleSolarMode() aan voor de correcte instelling.
         const setpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
         await this._writeMaxCurrentRaw(setpoint);
         await this._setCapSafe('max_current', setpoint);
       } else {
-        // Normale LB-modus: herbereken op basis van actuele netdata.
         const setpoint = this._calculateLbSetpoint();
         this._lbSetpointA = setpoint;
         await this._writeMaxCurrentRaw(setpoint);
@@ -1046,7 +1015,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (this._solarModeEnabled) {
       this.log('Handmatige aanpassing — solar mode uitgeschakeld');
       this._solarModeEnabled = false;
+      this._solarModeActive = false;
       await this._setCapSafe('solar_mode', false);
+      await this._setCapSafe('solar_mode_active', false);
       this.homey.notifications.createNotification({
         excerpt: this.homey.__('notifications.solar_mode_disabled_by_slider', { amps }),
       }).catch(err => this.log('Notification error:', err.message));
@@ -1054,6 +1025,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (this._paused) {
       this.log(`Direct current command (${amps} A) clears pause state`);
       this._paused            = false;
+      this._chargingPaused    = false;
+      await this._setCapSafe('charging_paused', false);
       this._prePauseSetpointA = null;
       await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
       this.homey.notifications.createNotification({
@@ -1063,7 +1036,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._writeMaxCurrentRaw(amps);
     this._lbSetpointA = amps;
     this._userMaxA    = amps;
-    // Bewaar de gebruikerslimiet zodat die een herstart overleeft.
     this.setStoreValue('userMaxA', amps).catch(err => this.log('setStoreValue userMaxA err:', err.message));
     await this.delay(300);
     const res = await this._clientSocket1.readHoldingRegisters(REG_MAX_CURRENT_RW, 2);
@@ -1080,15 +1052,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _applyCurrentLimits() {
     const hwMax  = Math.min(Math.max(Number(this._settings.max_current_limit) || 16, 1), 32);
     const phases = Number(this._settings.grid_phases) || 3;
-    // Totaalvermogen: stroom × fases × 230 V (bijv. 16 A × 3 × 230 = 11,0 kW)
     const maxKw  = Math.round(hwMax * phases * 230 / 100) / 10;
-    // IEC 61851 minimum afhankelijk van fase-instelling en checkbox:
-    // - 1-fase device of checkbox 'single_phase_solar' aan → 1,4 kW (6A × 1 × 230V)
-    // - 3-fase device zonder checkbox → 4,1 kW (6A × 3 × 230V)
     const canSinglePhase = phases === 1 || !!this._settings.single_phase_solar;
     const minKw = canSinglePhase
-      ? Math.round(6 * 1 * 230 / 100) / 10   // 1,4 kW
-      : Math.round(6 * 3 * 230 / 100) / 10;  // 4,1 kW
+      ? Math.round(6 * 1 * 230 / 100) / 10
+      : Math.round(6 * 3 * 230 / 100) / 10;
     this.setCapabilityOptions('max_current', { min: 1, max: hwMax, step: 1 })
       .catch(err => this.log('setCapabilityOptions err:', err.message));
     if (this.hasCapability('solar_min_charge_kw')) {
@@ -1097,7 +1065,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────
   async _setCapSafe(cap, value) {
     try {
       if (!this.hasCapability(cap) || this.getCapabilityValue(cap) === value) return;
@@ -1112,7 +1079,6 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   delay(ms) { return new Promise(r => this.homey.setTimeout(r, ms)); }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────
   async onAdded() { this.log('Device added:', this.getData().id); }
 
   async onDeleted() {
