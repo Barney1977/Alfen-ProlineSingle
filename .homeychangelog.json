@@ -65,5 +65,8 @@
   "1.3.4": {
     "en": "Total charge power is now calculated from the three phases (fixes too low power in the Energy tab). New Flow cards to turn solar surplus charging on/off and check its state.",
     "nl": "Totaal laadvermogen wordt nu uit de drie fasen berekend (lost te laag vermogen op het tabblad Energie op). Nieuwe Flow-kaarten om zonne-overschot laden aan/uit te zetten en de status te controleren."
+  },
+  "1.3.6": {
+    "en": "add flowstatement to start en stop suncharging"
   }
 }
