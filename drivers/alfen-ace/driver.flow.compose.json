@@ -66,6 +66,13 @@
         "en": "Charging !{{is|is not}} paused",
         "nl": "Laden is !{{gepauzeerd|niet gepauzeerd}}"
       }
+    },
+    {
+      "id": "is_solar_mode",
+      "title": {
+        "en": "Solar surplus charging !{{is|is not}} on",
+        "nl": "Zonne-overschot laden staat !{{aan|uit}}"
+      }
     }
   ],
   "actions": [
@@ -229,6 +236,47 @@
         "en": "Resumes charging at the last active setpoint. If load balancing is enabled, the optimal current is recalculated immediately.",
         "nl": "Hervat laden op het laatste actieve setpoint. Als laadbalancering is ingeschakeld, wordt de optimale stroom direct herberekend."
       }
+    },
+    {
+      "id": "set_solar_mode",
+      "title": {
+        "en": "Turn solar surplus charging on or off",
+        "nl": "Zonne-overschot laden aan- of uitzetten"
+      },
+      "titleFormatted": {
+        "en": "Turn solar surplus charging [[state]]",
+        "nl": "Zet zonne-overschot laden [[state]]"
+      },
+      "hint": {
+        "en": "Same as the solar surplus toggle on the device. Fails if the energy meter has not yet reported per-phase current.",
+        "nl": "Gelijk aan de schakelaar Zonne-overschot laden op het apparaat. Geeft een foutmelding als de energiemeter nog geen stroom per fase heeft doorgegeven."
+      },
+      "args": [
+        {
+          "type": "dropdown",
+          "name": "state",
+          "title": {
+            "en": "State",
+            "nl": "Status"
+          },
+          "values": [
+            {
+              "id": "on",
+              "label": {
+                "en": "on",
+                "nl": "aan"
+              }
+            },
+            {
+              "id": "off",
+              "label": {
+                "en": "off",
+                "nl": "uit"
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -260,6 +260,19 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         return true;
       });
 
+    this.homey.flow
+      .getActionCard('set_solar_mode')
+      .registerRunListener(async args => {
+        const enable = args.state === 'on';
+        await this.triggerCapabilityListener('solar_mode', enable);
+        // De capability listener zet zonneladen zelf weer uit als per-fase meterdata ontbreekt
+        if (enable && !this._solarModeEnabled) {
+          await this.setCapabilityValue('solar_mode', false).catch(() => {});
+          throw new Error(this.homey.__('warnings.solar_requires_phase_current'));
+        }
+        return true;
+      });
+
     // ── Flow conditions ──────────────────────────────────────────────────────
     this.homey.flow
       .getConditionCard('is_charging')
@@ -270,6 +283,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this.homey.flow
       .getConditionCard('is_paused')
       .registerRunListener(() => this._paused);
+    this.homey.flow
+      .getConditionCard('is_solar_mode')
+      .registerRunListener(() => !!this._solarModeEnabled);
 
     // ── Connect + start timers ───────────────────────────────────────────────
     await this.delay(1500);
@@ -919,10 +935,15 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     try {
       const res = await this._clientSocket1.readHoldingRegisters(REG_POWER_L1, 8);
       const b   = res.response._body.valuesAsBuffer;
-      await this._setCapSafe('charger_power_l1', this._clean(parseFloat32(b, 0)));
-      await this._setCapSafe('charger_power_l2', this._clean(parseFloat32(b, 4)));
-      await this._setCapSafe('charger_power_l3', this._clean(parseFloat32(b, 8)));
-      await this._setCapSafe('measure_power',    this._clean(parseFloat32(b, 12)));
+      const pL1 = this._clean(parseFloat32(b, 0));
+      const pL2 = this._clean(parseFloat32(b, 4));
+      const pL3 = this._clean(parseFloat32(b, 8));
+      await this._setCapSafe('charger_power_l1', pL1);
+      await this._setCapSafe('charger_power_l2', pL2);
+      await this._setCapSafe('charger_power_l3', pL3);
+      // Register 344 (Real Power Sum) geeft in de praktijk een te lage waarde
+      // (ca. de helft van L1+L2+L3). Totaal daarom zelf uit de fasen berekenen.
+      await this._setCapSafe('measure_power', Math.round(pL1 + pL2 + pL3));
     } catch (err) { this.log('pollPower err:', err.message); }
 
     try {

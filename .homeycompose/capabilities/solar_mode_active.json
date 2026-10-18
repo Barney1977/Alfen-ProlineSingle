@@ -1,0 +1,15 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Solar mode active",
+    "nl": "Zonnemodus actief"
+  },
+  "desc": {
+    "en": "True when the solar surplus mode is active.",
+    "nl": "Waar wanneer de zonne-overschot modus actief is."
+  },
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "uiComponent": "sensor"
+}

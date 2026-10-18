@@ -37,6 +37,7 @@
     "evcharger_charging",
     "measure_power",
     "charger_power_l1",
+    "max_current",
     "solar_mode",
     "solar_min_charge_kw",
     "charger_power_l2",
@@ -48,13 +49,15 @@
     "charger_current_l1",
     "charger_current_l2",
     "charger_current_l3",
-    "max_current",
     "actual_max_current",
     "safe_current",
     "charge_phases",
     "valid_time_remaining",
     "meter_active",
-    "grid_power"
+    "grid_power",
+    "car_connected",
+    "charging_paused",
+    "solar_mode_active"
   ],
   "capabilitiesOptions": {
     "measure_power": {
@@ -108,8 +111,20 @@
       },
       "value": "3",
       "values": [
-        { "id": "1", "label": { "en": "1-phase", "nl": "1-fase" } },
-        { "id": "3", "label": { "en": "3-phase", "nl": "3-fase" } }
+        {
+          "id": "1",
+          "label": {
+            "en": "1-phase",
+            "nl": "1-fase"
+          }
+        },
+        {
+          "id": "3",
+          "label": {
+            "en": "3-phase",
+            "nl": "3-fase"
+          }
+        }
       ]
     },
     {
@@ -133,8 +148,8 @@
         "nl": "Max laadkabelstroom (A)"
       },
       "hint": {
-        "en": "Maximum current supported by the charging cable (6–32 A).",
-        "nl": "Maximale stroom die de laadkabel ondersteunt (6–32 A)."
+        "en": "Maximum current supported by the charging cable (6\u201332 A).",
+        "nl": "Maximale stroom die de laadkabel ondersteunt (6\u201332 A)."
       },
       "value": 16
     },
@@ -172,8 +187,8 @@
         "nl": "Loadbalancing interval (s)"
       },
       "hint": {
-        "en": "How often load balancing recalculates the charge current (10–300 s).",
-        "nl": "Hoe vaak loadbalancing de laadstroom herberekent (10–300 s)."
+        "en": "How often load balancing recalculates the charge current (10\u2013300 s).",
+        "nl": "Hoe vaak loadbalancing de laadstroom herberekent (10\u2013300 s)."
       },
       "value": 30
     },

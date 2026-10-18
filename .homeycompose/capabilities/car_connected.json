@@ -1,0 +1,15 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Vehicle connected",
+    "nl": "Auto aangesloten"
+  },
+  "desc": {
+    "en": "True when a vehicle is connected to the charger.",
+    "nl": "Waar wanneer een auto is aangesloten op de lader."
+  },
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "uiComponent": "sensor"
+}

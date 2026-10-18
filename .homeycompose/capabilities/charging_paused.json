@@ -1,0 +1,15 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Charging paused",
+    "nl": "Laden gepauzeerd"
+  },
+  "desc": {
+    "en": "True when the charge process is paused.",
+    "nl": "Waar wanneer het laden is gepauzeerd."
+  },
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "uiComponent": "sensor"
+}
