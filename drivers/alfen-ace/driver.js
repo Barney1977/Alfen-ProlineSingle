@@ -8,7 +8,52 @@ module.exports = class AlfenAceDriver extends Homey.Driver {
    * onInit is called when the driver is initialized.
    */
   async onInit() {
+    this._registerFlowCards();
     this.log('AlfenAceDriver initialized');
+  }
+
+  /**
+   * Flow-kaarten één keer per driver registreren en via args.device naar het
+   * juiste device routeren. (Voorheen per device in onInit, waardoor bij meerdere
+   * laders de laatst geïnitialiseerde alle kaarten "overnam".)
+   */
+  _registerFlowCards() {
+    const action    = id => this.homey.flow.getActionCard(id);
+    const condition = id => this.homey.flow.getConditionCard(id);
+
+    action('update_grid_current').registerRunListener(async args => {
+      await args.device.flowUpdateGridCurrent(
+        Number(args.current_l1),
+        Number(args.current_l2),
+        Number(args.current_l3),
+      );
+      return true;
+    });
+    action('set_max_current').registerRunListener(async args => {
+      await args.device.flowSetMaxCurrent(args.current);
+      return true;
+    });
+    action('pause_charging').registerRunListener(async args => {
+      await args.device.flowPauseCharging();
+      return true;
+    });
+    action('resume_charging').registerRunListener(async args => {
+      await args.device.flowResumeCharging();
+      return true;
+    });
+    action('set_charge_phases').registerRunListener(async args => {
+      await args.device.flowSetChargePhases(Number(args.phases));
+      return true;
+    });
+    action('set_solar_mode').registerRunListener(async args => {
+      await args.device.flowSetSolarMode(args.state === 'on');
+      return true;
+    });
+
+    condition('is_charging').registerRunListener(async args => args.device.flowIsCharging());
+    condition('is_car_connected').registerRunListener(async args => args.device.flowIsCarConnected());
+    condition('is_paused').registerRunListener(async args => args.device.flowIsPaused());
+    condition('is_solar_mode').registerRunListener(async args => args.device.flowIsSolarMode());
   }
 
   /**

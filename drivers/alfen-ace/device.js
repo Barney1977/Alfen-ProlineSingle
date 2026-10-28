@@ -12,6 +12,8 @@ const LB_INTERVAL_DEFAULT_S = 30;
 const LB_INTERVAL_MIN_S     = 10;
 const ALFEN_VALIDITY_TIME_S = 60;
 const PAUSE_CURRENT_A       =  5;
+const METER_DEBOUNCE_MS     =  3 * 1000;  // meter-events samenvoegen tot max. 1 herberekening per 3 s
+const DISCONNECT_TIMEOUT_MS =  2 * 1000;
 
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
 const UNIT_SOCKET1 =   1;
@@ -28,6 +30,9 @@ const REG_VOLTAGE_L1          =  306;
 const REG_CURRENT_L1          =  320;
 const REG_POWER_L1            =  338;
 const REG_ENERGY_SUM          =  374;
+// Eén blok-read 306..377 dekt spanning, stroom, vermogen en energie (72 registers)
+const REG_METER_BLOCK_START   =  306;
+const REG_METER_BLOCK_LEN     =   72;
 
 const LOG = true;
 
@@ -85,6 +90,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       lb_interval:           30,
       lb_safety_margin_A:     1,
       single_phase_solar:  false,
+      power_source:     'phases',
     };
     const missingSettings = {};
     for (const [key, defaultVal] of Object.entries(settingDefaults)) {
@@ -130,6 +136,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       : 0;
     this._activeChargePhases    = null;  // wordt bij eerste solar-cyclus ingesteld
     this._lastPhaseSwitchMs     = 0;
+    this._pendingRaiseA         = null;
+
+    // Lifecycle / concurrency
+    this._destroyed             = false;
+    this._reconnectTimer        = null;
+    this._recalcTimer           = null;
+    this._lock                  = Promise.resolve();
+    this._pollBusy              = false;
+    this._attachSeq             = 0;
+    this._meterBlockSupported   = true;
 
     this._applyCurrentLimits();
     this._validateLbInterval();
@@ -141,38 +157,38 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._socket.setMaxListeners(20);
 
     this._socket.on('connect', () => {
+      if (this._destroyed) { this._socket.destroy(); return; }
       this._socketConnected   = true;
       this._reconnecting      = false;
       this._reconnectAttempts = 0;
       this.log('Socket connected');
-      this.setAvailable().catch(this.error.bind(this));
+      this.setAvailable().catch(() => {});
     });
     this._socket.on('end',     () => this.log('Socket ended'));
     this._socket.on('timeout', () => { this.log('Socket timeout'); this._socket.destroy(); });
     this._socket.on('error',   err => this.log('Socket error:', err.message));
     this._socket.on('close', () => {
       this._socketConnected = false;
+      if (this._destroyed) return;
       this.log('Socket closed');
-      this.setUnavailable(this.homey.__('device.disconnected')).catch(this.error.bind(this));
+      this.setUnavailable(this.homey.__('device.disconnected')).catch(() => {});
       this._scheduleReconnect();
     });
 
     // ── Capability listeners ─────────────────────────────────────────────────
-    this.registerCapabilityListener('max_current', async value => {
-      await this._writeMaxCurrentDirect(value);
-    });
-    this.registerCapabilityListener('evcharger_charging', async value => {
+    this.registerCapabilityListener('max_current', value =>
+      this._exclusive(() => this._writeMaxCurrentDirect(value)));
+    this.registerCapabilityListener('evcharger_charging', value => this._exclusive(async () => {
       this.log(`Pause state requested: ${value ? 'OFF' : 'ON'} (toggle from Homey UI)`);
       if (value) {
         await this._resumeCharging();
       } else {
         await this._pauseCharging();
       }
-    });
-    this.registerCapabilityListener('charge_phases', async value => {
-      await this._writePhases(Number(value));
-    });
-    this.registerCapabilityListener('solar_mode', async enabled => {
+    }));
+    this.registerCapabilityListener('charge_phases', value =>
+      this._exclusive(() => this._writePhases(Number(value))));
+    this.registerCapabilityListener('solar_mode', enabled => this._exclusive(async () => {
       this.log(`Solar charging toggle requested: ${enabled ? 'ON' : 'OFF'}`);
       this._solarModeEnabled = enabled;
       this._solarModeActive = enabled;
@@ -210,82 +226,17 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         }).catch(err => this.log('Notification error:', err.message));
         await this._handleSolarMode();
       }
-    });
-    this.registerCapabilityListener('solar_min_charge_kw', async value => {
+    }));
+    this.registerCapabilityListener('solar_min_charge_kw', value => this._exclusive(async () => {
       this._solarMinChargeKw = value;
       const phases = Number(this._settings.grid_phases) || 3;
       this.log(`Solar minimale laadsnelheid: ${value} kW (${(value * 1000 / (phases * 230)).toFixed(1)} A/fase)`);
       if (this._solarModeEnabled && this._gridCurrentA.L1 !== null) {
         await this._handleSolarMode();
       }
-    });
+    }));
 
-    // ── Flow actions ────────────────────────────────────────────────────────
-    this.homey.flow
-      .getActionCard('update_grid_current')
-      .registerRunListener(async args => {
-        await this._updateGridCurrent(
-          Number(args.current_l1),
-          Number(args.current_l2),
-          Number(args.current_l3),
-        );
-        return true;
-      });
-
-    this.homey.flow
-      .getActionCard('set_max_current')
-      .registerRunListener(async args => {
-        await this._writeMaxCurrentDirect(args.current);
-        return true;
-      });
-
-    this.homey.flow
-      .getActionCard('pause_charging')
-      .registerRunListener(async () => {
-        await this._pauseCharging();
-        return true;
-      });
-
-    this.homey.flow
-      .getActionCard('resume_charging')
-      .registerRunListener(async () => {
-        await this._resumeCharging();
-        return true;
-      });
-
-    this.homey.flow
-      .getActionCard('set_charge_phases')
-      .registerRunListener(async args => {
-        await this._writePhases(Number(args.phases));
-        return true;
-      });
-
-    this.homey.flow
-      .getActionCard('set_solar_mode')
-      .registerRunListener(async args => {
-        const enable = args.state === 'on';
-        await this.triggerCapabilityListener('solar_mode', enable);
-        // De capability listener zet zonneladen zelf weer uit als per-fase meterdata ontbreekt
-        if (enable && !this._solarModeEnabled) {
-          await this.setCapabilityValue('solar_mode', false).catch(() => {});
-          throw new Error(this.homey.__('warnings.solar_requires_phase_current'));
-        }
-        return true;
-      });
-
-    // ── Flow conditions ──────────────────────────────────────────────────────
-    this.homey.flow
-      .getConditionCard('is_charging')
-      .registerRunListener(() => isActivelyCharging(this._lastMode3));
-    this.homey.flow
-      .getConditionCard('is_car_connected')
-      .registerRunListener(() => isCarConnected(this._lastMode3));
-    this.homey.flow
-      .getConditionCard('is_paused')
-      .registerRunListener(() => this._paused);
-    this.homey.flow
-      .getConditionCard('is_solar_mode')
-      .registerRunListener(() => !!this._solarModeEnabled);
+    // Flow-kaarten worden in driver.js geregistreerd (één keer, met args.device).
 
     // ── Connect + start timers ───────────────────────────────────────────────
     await this.delay(1500);
@@ -293,7 +244,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._connect();
     } catch (err) {
       this.log('Initial connect failed:', err.message);
-      this.setUnavailable(this.homey.__('device.disconnected')).catch(this.error.bind(this));
+      this.setUnavailable(this.homey.__('device.disconnected')).catch(() => {});
     }
 
     this._startPolling();
@@ -301,9 +252,50 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._attachMeterListeners().catch(e => this.log('Meter attach err:', e.message));
   }
 
+  // ── Flow API (aangeroepen vanuit driver.js) ────────────────────────────────
+  flowUpdateGridCurrent(l1, l2, l3) { return this._exclusive(() => this._updateGridCurrent(l1, l2, l3)); }
+  flowSetMaxCurrent(amps)           { return this._exclusive(() => this._writeMaxCurrentDirect(amps)); }
+  flowPauseCharging()               { return this._exclusive(() => this._pauseCharging()); }
+  flowResumeCharging()              { return this._exclusive(() => this._resumeCharging()); }
+  flowSetChargePhases(phases)       { return this._exclusive(() => this._writePhases(phases)); }
+  async flowSetSolarMode(enable) {
+    // De capability listener (zelf al exclusief) zet zonneladen weer uit als per-fase meterdata ontbreekt
+    await this.triggerCapabilityListener('solar_mode', enable);
+    if (enable && !this._solarModeEnabled) {
+      await this.setCapabilityValue('solar_mode', false).catch(() => {});
+      throw new Error(this.homey.__('warnings.solar_requires_phase_current'));
+    }
+  }
+  flowIsCharging()     { return isActivelyCharging(this._lastMode3); }
+  flowIsCarConnected() { return isCarConnected(this._lastMode3); }
+  flowIsPaused()       { return !!this._paused; }
+  flowIsSolarMode()    { return !!this._solarModeEnabled; }
+
+  // ── Concurrency helpers ──────────────────────────────────────────────────
+  // Serialiseert alle state-wijzigende/schrijvende paden, zodat bv. pauze,
+  // faseomschakeling en zonneladen elkaar niet halverwege kruisen.
+  _exclusive(fn) {
+    const run = this._lock.then(() => (this._destroyed ? undefined : fn()));
+    this._lock = run.catch(() => {});
+    return run;
+  }
+
+  // Voegt de 3-4 meter-events per update samen tot één herberekening.
+  _scheduleRecalc() {
+    if (this._destroyed || this._recalcTimer) return;
+    this._recalcTimer = this.homey.setTimeout(() => {
+      this._recalcTimer = null;
+      this._exclusive(() => (this._solarModeEnabled ? this._handleSolarMode() : this._recalculateAndWrite()))
+        .catch(e => this.log('Recalc err:', e.message));
+    }, METER_DEBOUNCE_MS);
+  }
+
   // ── Energy meter listeners (HomeyAPI) ─────────────────────────────────────
   async _attachMeterListeners(retryCount = 0) {
+    if (this._destroyed) return;
     this._destroyMeterListeners();
+    const seq = ++this._attachSeq;   // nieuwere attach maakt deze ongeldig
+    const stillCurrent = () => !this._destroyed && seq === this._attachSeq;
 
     const deviceId = (this._settings.meter_device_id || '').trim();
     if (!deviceId) {
@@ -318,8 +310,11 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       if (retryCount < 5) {
         const delay = Math.min(5000 * Math.pow(2, retryCount), 60000);
         this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/5)`);
-        this.homey.setTimeout(() => this._attachMeterListeners(retryCount + 1)
-          .catch(e => this.log('Meter attach retry err:', e.message)), delay);
+        this.homey.setTimeout(() => {
+          if (!stillCurrent()) return;
+          this._attachMeterListeners(retryCount + 1)
+            .catch(e => this.log('Meter attach retry err:', e.message));
+        }, delay);
       }
       return;
     }
@@ -328,17 +323,22 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     try {
       meterDevice = await homeyApi.devices.getDevice({ id: deviceId });
     } catch (err) {
+      if (!stillCurrent()) return;
       this.log(`Meter device '${deviceId}' not found: ${err.message}`);
       if (retryCount < 3) {
         const delay = Math.min(10000 * Math.pow(2, retryCount), 60000);
         this.log(`Retrying meter attach in ${delay/1000}s (attempt ${retryCount + 1}/3)`);
-        this.homey.setTimeout(() => this._attachMeterListeners(retryCount + 1)
-          .catch(e => this.log('Meter attach retry err:', e.message)), delay);
+        this.homey.setTimeout(() => {
+          if (!stillCurrent()) return;
+          this._attachMeterListeners(retryCount + 1)
+            .catch(e => this.log('Meter attach retry err:', e.message));
+        }, delay);
         return;
       }
       this.setWarning(this.homey.__('warnings.meter_device_not_found')).catch(() => {});
       return;
     }
+    if (!stillCurrent()) return;   // intussen verwijderd of opnieuw gekoppeld
 
     const numPhases = Number(this._settings.grid_phases) || 3;
     const wantedCaps = numPhases === 1
@@ -369,6 +369,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     for (const cap of available) {
       const capLower = cap.toLowerCase();
       const instance = meterDevice.makeCapabilityInstance(cap, value => {
+        if (this._destroyed) return;
         this._applyMeterValue(capLower, value);
       });
       this._meterCapInstances.push(instance);
@@ -422,11 +423,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       this.log('Meter data received — warning cleared');
     }
     if (capLower === 'measure_power') return;
-    if (this._solarModeEnabled) {
-      this._handleSolarMode().catch(e => this.log('Solar mode err:', e.message));
-    } else {
-      this._recalculateAndWrite().catch(e => this.log('LB recalc err:', e.message));
-    }
+    this._scheduleRecalc();
   }
 
   _destroyMeterListeners() {
@@ -495,7 +492,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       : Math.min(avail('L1'), avail('L2'), avail('L3'));
 
     const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
-    if (LOG) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${JSON.stringify(chargerA)} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
+    if (LOG && clamped !== this._lbSetpointA) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${JSON.stringify(chargerA)} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
     return clamped;
   }
 
@@ -584,9 +581,21 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _recalculateAndWrite() {
-    if (!this._socketConnected) return;
-    const setpoint = this._calculateLbSetpoint();
-    if (setpoint === this._lbSetpointA) return;
+    if (!this._socketConnected || this._destroyed) return;
+    let setpoint = this._calculateLbSetpoint();
+    const current = this._lbSetpointA;
+    if (setpoint === current) { this._pendingRaiseA = null; return; }
+    // Verlagen direct (zekering beschermen); verhogen pas na bevestiging door
+    // een tweede berekening, om pendelen te voorkomen. De keepalive verhoogt
+    // in elk geval binnen één LB-interval.
+    if (current !== null && setpoint > current && !this._paused) {
+      const prev = this._pendingRaiseA;
+      this._pendingRaiseA = setpoint;
+      if (prev === null) return;
+      setpoint = Math.min(prev, setpoint);
+      if (setpoint <= current) return;
+    }
+    this._pendingRaiseA = null;
     this.log(`LB setpoint: ${this._lbSetpointA} → ${setpoint} A`);
     this._lbSetpointA = setpoint;
     await this._writeMaxCurrentRaw(setpoint);
@@ -629,8 +638,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     if (!this._settings.lb_enabled) {
       this.log('LB keepalive disabled');
       if (!this._meterStatusTimer) {
-        this._meterStatusTimer = this.homey.setInterval(async () => {
-          await this._lbKeepalive();
+        this._meterStatusTimer = this.homey.setInterval(() => {
+          this._exclusive(() => this._lbKeepalive()).catch(e => this.log('Keepalive err:', e.message));
         }, 30000);
       }
       return;
@@ -641,7 +650,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
     const ms = this._lbIntervalMs();
     this.log(`LB keepalive started — ${ms / 1000} s interval`);
-    this._lbTimer = this.homey.setInterval(() => this._lbKeepalive(), ms);
+    this._lbTimer = this.homey.setInterval(() => {
+      this._exclusive(() => this._lbKeepalive()).catch(e => this.log('Keepalive err:', e.message));
+    }, ms);
   }
 
   _stopLoadBalancing() {
@@ -651,6 +662,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   _restartLoadBalancing() { this._stopLoadBalancing(); this._startLoadBalancing(); }
 
   async _lbKeepalive() {
+    if (this._destroyed) return;
     if (this._meterRefreshFn) this._meterRefreshFn();
 
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
@@ -693,7 +705,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       return;
     }
     const setpoint = this._calculateLbSetpoint();
-    this._lbSetpointA = setpoint;
+    this._lbSetpointA   = setpoint;
+    this._pendingRaiseA = null;
     try {
       await this._writeMaxCurrentRaw(setpoint);
       await this._setCapSafe('max_current', setpoint);
@@ -704,7 +717,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _connect() {
-    if (this._socketConnected) return;
+    if (this._destroyed || this._socketConnected) return;
     return new Promise((resolve, reject) => {
       const { ip: host, port = 502 } = this._settings;
       this.log(`Connecting to ${host}:${port}`);
@@ -725,19 +738,24 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   async _disconnect() {
     return new Promise(resolve => {
       if (!this._socketConnected) { resolve(); return; }
-      this._socket.once('close', resolve);
+      // Niet eindeloos wachten op een nette close: na timeout hard sluiten.
+      const timer = this.homey.setTimeout(() => this._socket.destroy(), DISCONNECT_TIMEOUT_MS);
+      this._socket.once('close', () => { this.homey.clearTimeout(timer); resolve(); });
       this._socket.end();
     });
   }
 
   _scheduleReconnect() {
-    if (this._reconnecting) return;
+    if (this._destroyed || this._reconnecting) return;
     this._reconnecting = true;
     this._reconnectAttempts++;
     const delay = Math.min(RECONNECT_DELAY_MS * Math.pow(2, this._reconnectAttempts - 1), 30000);
     this.log(`Reconnect attempt ${this._reconnectAttempts} in ${delay / 1000}s`);
-    this.homey.setTimeout(async () => {
+    this._reconnectTimer = this.homey.setTimeout(async () => {
+      this._reconnectTimer = null;
+      if (this._destroyed) return;
       try { await this._connect(); } catch (err) {
+        if (this._destroyed) return;
         this.log('Reconnect failed:', err.message);
         this._reconnecting = false;
         this._scheduleReconnect();
@@ -811,11 +829,22 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   _startPolling() {
-    this._pollAll().catch(err => this.log('Initial poll error:', err.message));
-    this._pollingTimer = this.homey.setInterval(async () => {
+    this._runPoll().catch(err => this.log('Initial poll error:', err.message));
+    this._pollingTimer = this.homey.setInterval(() => {
       if (!this._socketConnected) return;
-      try { await this._pollAll(); } catch (err) { this.log('Poll error:', err.message); }
+      this._runPoll().catch(err => this.log('Poll error:', err.message));
     }, POLL_INTERVAL_MS);
+  }
+
+  // Voorkomt overlappende polls als de paal traag antwoordt.
+  async _runPoll() {
+    if (this._pollBusy || this._destroyed) return;
+    this._pollBusy = true;
+    try {
+      await this._exclusive(() => this._pollAll());
+    } finally {
+      this._pollBusy = false;
+    }
   }
 
   async _pollAll() {
@@ -912,44 +941,101 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _pollMeasurements() {
-    try {
-      const res = await this._clientSocket1.readHoldingRegisters(REG_VOLTAGE_L1, 6);
-      const b   = res.response._body.valuesAsBuffer;
-      await this._setCapSafe('charger_voltage_l1', this._clean(parseFloat32(b, 0)));
-      await this._setCapSafe('charger_voltage_l2', this._clean(parseFloat32(b, 4)));
-      await this._setCapSafe('charger_voltage_l3', this._clean(parseFloat32(b, 8)));
-    } catch (err) { this.log('pollVoltage err:', err.message); }
+    const m = await this._readMeasurements();
+    if (this._destroyed) return;
 
-    try {
-      const res = await this._clientSocket1.readHoldingRegisters(REG_CURRENT_L1, 6);
-      const b   = res.response._body.valuesAsBuffer;
-      const cL1 = this._clean(parseFloat32(b, 0));
-      const cL2 = this._clean(parseFloat32(b, 4));
-      const cL3 = this._clean(parseFloat32(b, 8));
+    if (m.voltage) {
+      await this._setCapSafe('charger_voltage_l1', m.voltage[0]);
+      await this._setCapSafe('charger_voltage_l2', m.voltage[1]);
+      await this._setCapSafe('charger_voltage_l3', m.voltage[2]);
+    }
+
+    if (m.current) {
+      const [cL1, cL2, cL3] = m.current;
       await this._setCapSafe('charger_current_l1', cL1);
       await this._setCapSafe('charger_current_l2', cL2);
       await this._setCapSafe('charger_current_l3', cL3);
       this._chargerCurrentA = { L1: cL1, L2: cL2, L3: cL3 };
-    } catch (err) { this.log('pollCurrent err:', err.message); }
+    }
 
-    try {
-      const res = await this._clientSocket1.readHoldingRegisters(REG_POWER_L1, 8);
-      const b   = res.response._body.valuesAsBuffer;
-      const pL1 = this._clean(parseFloat32(b, 0));
-      const pL2 = this._clean(parseFloat32(b, 4));
-      const pL3 = this._clean(parseFloat32(b, 8));
+    if (m.power) {
+      const [pL1, pL2, pL3, pSum] = m.power;
       await this._setCapSafe('charger_power_l1', pL1);
       await this._setCapSafe('charger_power_l2', pL2);
       await this._setCapSafe('charger_power_l3', pL3);
-      // Register 344 (Real Power Sum) geeft in de praktijk een te lage waarde
-      // (ca. de helft van L1+L2+L3). Totaal daarom zelf uit de fasen berekenen.
-      await this._setCapSafe('measure_power', Math.round(pL1 + pL2 + pL3));
-    } catch (err) { this.log('pollPower err:', err.message); }
+      await this._setCapSafe('measure_power', Math.round(this._selectTotalPower(pL1, pL2, pL3, pSum)));
+    }
 
+    if (m.energyKwh !== null) {
+      await this._setCapSafe('meter_power', m.energyKwh);
+    }
+  }
+
+  // Kiest het totaal laadvermogen volgens setting 'power_source':
+  //  - phases (standaard): L1+L2+L3 (reg 338/340/342)
+  //  - total:              totaalregister 344 (Real Power Sum)
+  //  - auto:               fasen, maar terugvallen op 344 als de fasen 0 geven terwijl er stroom loopt
+  // Sommige paal/firmware-combinaties geven 0/NaN in de faseregisters terwijl 344 wél gevuld is.
+  _selectTotalPower(pL1, pL2, pL3, pSum) {
+    const source  = this._settings.power_source || 'phases';
+    const pPhases = pL1 + pL2 + pL3;
+    const c       = this._chargerCurrentA;
+    const iSum    = (c.L1 || 0) + (c.L2 || 0) + (c.L3 || 0);
+    let total;
+    switch (source) {
+      case 'total': total = pSum; break;
+      case 'auto':  total = (pPhases <= 0 && iSum > 1) ? pSum : pPhases; break;
+      default:      total = pPhases;
+    }
+    if (LOG) this.log(`Power: fasen=${Math.round(pPhases)} W reg344=${Math.round(pSum)} W I=${iSum.toFixed(1)} A → ${Math.round(total)} W (${source})`);
+    return total;
+  }
+
+  // Leest alle meetwaarden in één Modbus-request (306..377). Valt terug op losse
+  // reads als de paal/firmware de blok-read weigert (Modbus exception).
+  async _readMeasurements() {
+    const f32 = (b, reg, base) => this._clean(parseFloat32(b, (reg - base) * 2));
+
+    if (this._meterBlockSupported) {
+      try {
+        const res  = await this._clientSocket1.readHoldingRegisters(REG_METER_BLOCK_START, REG_METER_BLOCK_LEN);
+        const b    = res.response._body.valuesAsBuffer;
+        const base = REG_METER_BLOCK_START;
+        return {
+          voltage:   [f32(b, REG_VOLTAGE_L1, base), f32(b, REG_VOLTAGE_L1 + 2, base), f32(b, REG_VOLTAGE_L1 + 4, base)],
+          current:   [f32(b, REG_CURRENT_L1, base), f32(b, REG_CURRENT_L1 + 2, base), f32(b, REG_CURRENT_L1 + 4, base)],
+          power:     [f32(b, REG_POWER_L1, base), f32(b, REG_POWER_L1 + 2, base), f32(b, REG_POWER_L1 + 4, base), f32(b, REG_POWER_L1 + 6, base)],
+          energyKwh: this._clean(parseFloat64(b, (REG_ENERGY_SUM - base) * 2) / 1000),
+        };
+      } catch (err) {
+        if (err && err.err === 'ModbusException') {
+          this._meterBlockSupported = false;
+          this.log('Blok-read 306..377 niet ondersteund door deze paal — terugval op losse reads');
+        } else {
+          this.log('pollMeasurements (blok) err:', err.message);
+          return { voltage: null, current: null, power: null, energyKwh: null };
+        }
+      }
+    }
+
+    const out = { voltage: null, current: null, power: null, energyKwh: null };
     try {
-      const res = await this._clientSocket1.readHoldingRegisters(REG_ENERGY_SUM, 4);
-      await this._setCapSafe('meter_power', this._clean(parseFloat64(res.response._body.valuesAsBuffer) / 1000));
+      const b = (await this._clientSocket1.readHoldingRegisters(REG_VOLTAGE_L1, 6)).response._body.valuesAsBuffer;
+      out.voltage = [0, 4, 8].map(o => this._clean(parseFloat32(b, o)));
+    } catch (err) { this.log('pollVoltage err:', err.message); }
+    try {
+      const b = (await this._clientSocket1.readHoldingRegisters(REG_CURRENT_L1, 6)).response._body.valuesAsBuffer;
+      out.current = [0, 4, 8].map(o => this._clean(parseFloat32(b, o)));
+    } catch (err) { this.log('pollCurrent err:', err.message); }
+    try {
+      const b = (await this._clientSocket1.readHoldingRegisters(REG_POWER_L1, 8)).response._body.valuesAsBuffer;
+      out.power = [0, 4, 8, 12].map(o => this._clean(parseFloat32(b, o)));
+    } catch (err) { this.log('pollPower err:', err.message); }
+    try {
+      const b = (await this._clientSocket1.readHoldingRegisters(REG_ENERGY_SUM, 4)).response._body.valuesAsBuffer;
+      out.energyKwh = this._clean(parseFloat64(b) / 1000);
     } catch (err) { this.log('pollEnergy err:', err.message); }
+    return out;
   }
 
   async _pauseCharging() {
@@ -1087,6 +1173,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   async _setCapSafe(cap, value) {
+    if (this._destroyed) return;
     try {
       if (!this.hasCapability(cap) || this.getCapabilityValue(cap) === value) return;
       await this.setCapabilityValue(cap, value);
@@ -1102,22 +1189,34 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   async onAdded() { this.log('Device added:', this.getData().id); }
 
-  async onDeleted() {
-    this.log('Device deleted:', this.getData().id);
+  // Eén gezamenlijke opruimroutine voor verwijderen én herstarten/updaten:
+  // stopt alle timers, blokkeert verdere reconnects en sluit de socket hard.
+  async _teardown() {
+    if (this._destroyed) return;
+    this._destroyed = true;             // eerst: blokkeert reconnects en capability-writes (geen 404-ruis)
+    this._attachSeq++;
     this._destroyMeterListeners();
+    if (this._reconnectTimer) { this.homey.clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+    if (this._recalcTimer)    { this.homey.clearTimeout(this._recalcTimer);    this._recalcTimer    = null; }
+    if (this._pollingTimer)   { this.homey.clearInterval(this._pollingTimer);  this._pollingTimer   = null; }
     this._stopLoadBalancing();
     this._stopValidTimeCountdown();
-    if (this._pollingTimer) { this.homey.clearInterval(this._pollingTimer); this._pollingTimer = null; }
-    this._socket.destroy();
+    if (this._socket) {
+      this._socket.removeAllListeners();
+      this._socket.on('error', () => {});   // voorkomt unhandled 'error' na teardown
+      this._socket.destroy();
+    }
+    this._socketConnected = false;
+  }
+
+  async onDeleted() {
+    this.log('Device deleted:', this.getData().id);
+    await this._teardown();
   }
 
   async onUninit() {
     this.log('Device uninit:', this.getData().id);
-    this._destroyMeterListeners();
-    this._stopLoadBalancing();
-    this._stopValidTimeCountdown();
-    if (this._pollingTimer) { this.homey.clearInterval(this._pollingTimer); this._pollingTimer = null; }
-    await this._disconnect().catch(() => {});
-  }  
+    await this._teardown();
+  }
 };
 
