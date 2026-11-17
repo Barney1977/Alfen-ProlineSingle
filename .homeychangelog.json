@@ -72,5 +72,8 @@
   "1.3.7": {
     "en": "More stable after updates and removing the device (no more reconnects from a removed device). New setting 'Charge power source' for chargers/firmware where charge power stayed 0 in the Energy tab. Lower load: energy meter updates are bundled, all Modbus actions run one after the other and measurements are read in one request.",
     "nl": "Stabieler na updates en verwijderen van het apparaat (geen reconnects meer vanuit een verwijderd apparaat). Nieuwe instelling 'Bron laadvermogen' voor palen/firmware waarbij het laadvermogen op het tabblad Energie op 0 bleef. Lagere belasting: energiemeter-updates worden gebundeld, alle Modbus-acties lopen na elkaar en meetwaarden worden in één verzoek gelezen."
+  },
+  "1.3.8": {
+    "en": "smoother charging: resume at a minimum 8A"
   }
 }
