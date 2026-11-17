@@ -15,6 +15,17 @@ const PAUSE_CURRENT_A       =  5;
 const METER_DEBOUNCE_MS     =  3 * 1000;  // meter-events samenvoegen tot max. 1 herberekening per 3 s
 const DISCONNECT_TIMEOUT_MS =  2 * 1000;
 
+// ─── Laadregeling (rustig starten, niet pendelen) ─────────────────────────────
+const MIN_CHARGE_DEFAULT_A  =  7;               // standaard instelling 'min_charge_current'
+const RESUME_MIN_A          =  8;               // startstroom na een (interne) pauze
+const RESUME_HOLD_MS        = 90 * 1000;        // startstroom zo lang vasthouden
+const RAISE_STEP_A          =  2;               // verhogen pas bij minimaal deze ruimte extra
+const RAISE_STABLE_MS       = 60 * 1000;        // ... die zo lang aaneengesloten aanwezig is
+const SETTLE_MS             = 15 * 1000;        // na een wijziging: auto tijd geven om bij te regelen
+const AUTO_PAUSE_MIN_MS     =  5 * 60 * 1000;   // minimale duur interne pauze
+const CHARGE_MIN_MS         =  5 * 60 * 1000;   // minimale laadduur voordat zonneladen mag pauzeren
+const CHARGER_READ_MAX_AGE_MS = 2 * 1000;       // laadstroom paal verversen als ouder dan dit
+
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
 const UNIT_SOCKET1 =   1;
 
@@ -91,6 +102,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       lb_safety_margin_A:     1,
       single_phase_solar:  false,
       power_source:     'phases',
+      min_charge_current:  MIN_CHARGE_DEFAULT_A,
     };
     const missingSettings = {};
     for (const [key, defaultVal] of Object.entries(settingDefaults)) {
@@ -136,7 +148,16 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       : 0;
     this._activeChargePhases    = null;  // wordt bij eerste solar-cyclus ingesteld
     this._lastPhaseSwitchMs     = 0;
-    this._pendingRaiseA         = null;
+
+    // Laadregeling: interne pauze (zekering/zon) staat los van de pauze van de gebruiker
+    this._autoPaused            = false;
+    this._autoPausedSince       = 0;
+    this._autoPauseReason       = null;
+    this._holdUntil             = 0;      // tot wanneer de startstroom wordt vastgehouden
+    this._chargeStartMs         = 0;      // start van de huidige laadperiode
+    this._lastWriteMs           = 0;      // laatste wijziging van het instelpunt
+    this._chargerReadMs         = 0;      // laatste uitlezing laadstroom paal
+    this._stable                = { start: null, raise: null };
 
     // Lifecycle / concurrency
     this._destroyed             = false;
@@ -214,6 +235,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
       this.log(`Solar charging state set to ${enabled ? 'ON' : 'OFF'}`);
       if (!enabled) {
+        // Stond zonneladen in een interne pauze, dan mag de loadbalancing meteen
+        // (na 60 s stabiele ruimte) weer starten: de minimale pauzeduur vervalt.
+        if (this._autoPaused) this._autoPausedSince = 0;
         this._activeChargePhases = null;
         this._lastPhaseSwitchMs  = 0;
         this.unsetWarning().catch(() => {});
@@ -437,20 +461,70 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._setCapSafe('meter_active', false).catch(() => {});
   }
 
-  _calculateLbSetpoint() {
-    if (this._paused) return PAUSE_CURRENT_A;
-    const fuseA    = Number(this._settings.grid_fuse_A)        || 25;
-    const cableMax = Number(this._settings.max_current_limit)  || 16;
-    const margin   = Number(this._settings.lb_safety_margin_A) ||  1;
-    const phases   = Number(this._settings.grid_phases)        ||  3;
-    const activelyCharging = isActivelyCharging(this._lastMode3);
-    const fallbackA = (activelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
-    const chargerA  = {
+  // ── Laadregeling: grenzen ──────────────────────────────────────────────────
+  // Hoogste stroom die de gebruiker toestaat (schuif/flowkaart, begrensd door kabel/paal).
+  _capA() {
+    const cableMax = Number(this._settings.max_current_limit) || 16;
+    return this._userMaxA !== null ? Math.min(this._userMaxA, cableMax) : cableMax;
+  }
+
+  // Laagste stroom waarop geladen wordt. Kiest de gebruiker zelf een lager maximum
+  // (bijv. 6 A), dan respecteren we dat.
+  _effectiveMinA() {
+    const v = Number(this._settings.min_charge_current);
+    const minA = (v >= 6 && v <= 16) ? v : MIN_CHARGE_DEFAULT_A;
+    return Math.min(minA, this._capA());
+  }
+
+  _effectiveResumeA() {
+    return Math.max(this._effectiveMinA(), Math.min(RESUME_MIN_A, this._capA()));
+  }
+
+  // Laadstroom van de paal per fase, zoals meegerekend in de ruimte op de zekering.
+  _chargerCurrentForCalc() {
+    const fallbackA = (isActivelyCharging(this._lastMode3) && this._lbSetpointA > PAUSE_CURRENT_A)
+      ? this._lbSetpointA : 0;
+    return {
       L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : fallbackA,
       L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : fallbackA,
       L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : fallbackA,
     };
+  }
 
+  // Ruimte op de hoofdzekering voor de lader (A per fase), zonder ondergrens.
+  _fuseRoomA(phases) {
+    const fuseA    = Number(this._settings.grid_fuse_A)        || 25;
+    const cableMax = Number(this._settings.max_current_limit)  || 16;
+    const margin   = Number(this._settings.lb_safety_margin_A) ||  1;
+    const chargerA = this._chargerCurrentForCalc();
+    const avail = phase => {
+      const measured = this._gridCurrentA[phase];
+      if (measured === null) return cableMax;
+      return fuseA - measured + (chargerA[phase] || 0) - margin;
+    };
+    const raw = phases === 1
+      ? avail('L1')
+      : Math.min(avail('L1'), avail('L2'), avail('L3'));
+    return { raw, roomA: Math.min(Math.round(raw), cableMax), chargerA };
+  }
+
+  // Leest de actuele laadstroom van de paal als de laatste meting ouder is dan 2 s.
+  // Zo rekent de loadbalancing niet met een laadstroom van tot 30 s oud terwijl de
+  // netstroom al wel de nieuwe situatie laat zien (oorzaak van pendelen).
+  async _refreshChargerCurrent() {
+    if (!this._socketConnected || this._destroyed) return;
+    if (Date.now() - this._chargerReadMs < CHARGER_READ_MAX_AGE_MS) return;
+    try {
+      const b = (await this._clientSocket1.readHoldingRegisters(REG_CURRENT_L1, 6)).response._body.valuesAsBuffer;
+      const [cL1, cL2, cL3] = [0, 4, 8].map(o => this._clean(parseFloat32(b, o)));
+      this._chargerCurrentA = { L1: cL1, L2: cL2, L3: cL3 };
+      this._chargerReadMs   = Date.now();
+    } catch (err) { this.log('refreshChargerCurrent err:', err.message); }
+  }
+
+  // Grenzen voor loadbalancing (niet-zonneladen).
+  // Geeft { fallbackA } bij ontbrekende/verlopen meterdata, anders { wantA, roomA }.
+  _computeLbLimits() {
     const staleMs   = (Number(this._settings.lb_interval) || 30) * 2 * 1000;
     const dataStale = this._gridLastUpdateMs !== null
       && (Date.now() - this._gridLastUpdateMs) > staleMs;
@@ -460,48 +534,145 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       const currentSetpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
       if (noDataYet) {
         this.log(`Wacht op eerste metermeting — huidige instelling ${currentSetpoint} A gehandhaafd`);
-        return currentSetpoint;
+        return { fallbackA: currentSetpoint };
       }
       if (currentSetpoint <= 6) {
         this.log(`Meterdata verlopen — al op ${currentSetpoint} A (≤ 6 A veilig), geen wijziging`);
-        return currentSetpoint;
+        return { fallbackA: currentSetpoint };
       }
       this.log('Meterdata verlopen — terugval naar 6 A veiligheidsniveau');
-      return 6;
+      return { fallbackA: 6 };
     }
 
-    const userMax = this._userMaxA !== null
-      ? Math.min(this._userMaxA, cableMax)
-      : cableMax;
+    const capA = this._capA();
+    if (!this._meterConfigured) return { wantA: capA, roomA: capA };
 
-    if (!this._meterConfigured) {
-      return this._lbSetpointA !== null
-        ? Math.max(6, Math.min(this._lbSetpointA, userMax))
-        : userMax;
+    const phases = Number(this._settings.grid_phases) || 3;
+    const { raw, roomA, chargerA } = this._fuseRoomA(phases);
+    if (LOG) this.log(`LB calc: charger=${JSON.stringify(chargerA)} ruimte=${raw.toFixed(1)} A → ${roomA} A, max=${capA} A`);
+    return { wantA: capA, roomA };
+  }
+
+  // ── Laadregeling: centrale poort ───────────────────────────────────────────
+  // Alle automatische schrijfacties (loadbalancing, keepalive, zonneladen) lopen hierdoor.
+  //   wantA = gewenste stroom (LB: maximum gebruiker, zon: zondoel)
+  //   roomA = ruimte op de hoofdzekering
+  // Regels:
+  //   - ruimte < minimum → interne pauze (5 A), de zekering gaat altijd voor
+  //   - interne pauze eindigt pas na 5 min én 60 s stabiel ≥ startstroom
+  //   - zondoel < minimum → eerst minimale laadduur afmaken, dan interne pauze
+  //   - na (her)start 90 s de startstroom vasthouden (alleen omlaag voor de zekering)
+  //   - omlaag direct, omhoog pas na 60 s stabiel ≥ 2 A extra en 15 s na de vorige wijziging
+  async _applyTarget(wantA, roomA, src) {
+    if (this._paused || !this._socketConnected || this._destroyed) return;
+    const now  = Date.now();
+    const minA = this._effectiveMinA();
+
+    if (roomA < minA) {
+      return this._autoPause(`te weinig ruimte op de zekering (${roomA} A)`);
     }
 
-    const avail = phase => {
-      const measured = this._gridCurrentA[phase];
-      if (measured === null) return cableMax;
-      const phaseCharger = typeof chargerA === 'object' ? (chargerA[phase] || 0) : chargerA;
-      return fuseA - measured + phaseCharger - margin;
-    };
+    if (this._autoPaused) {
+      const availA = Math.min(wantA, roomA);
+      const stable = this._stableAtLeast('start', availA, this._effectiveResumeA(), now);
+      const longEnough = now - this._autoPausedSince >= AUTO_PAUSE_MIN_MS;
+      if (!stable || !longEnough) return;
+      this.log(`Interne pauze voorbij (${this._autoPauseReason}) — ${availA} A beschikbaar`);
+      this._autoPaused      = false;
+      this._autoPauseReason = null;
+      return this._startCharging(wantA, roomA, src);
+    }
 
-    const setpoint = phases === 1
-      ? avail('L1')
-      : Math.min(avail('L1'), avail('L2'), avail('L3'));
+    if (wantA < minA) {
+      if (now - this._chargeStartMs < CHARGE_MIN_MS) {
+        wantA = minA;   // minimale laadduur nog niet om: op minimum blijven
+      } else {
+        return this._autoPause(src === 'solar'
+          ? `te weinig zon (${wantA} A)`
+          : `gewenste stroom onder minimum (${wantA} A)`);
+      }
+    }
 
-    const clamped = Math.max(6, Math.min(Math.round(setpoint), userMax));
-    if (LOG && clamped !== this._lbSetpointA) this.log(`LB calc: fuse=${fuseA} cable=${cableMax} margin=${margin} charger=${JSON.stringify(chargerA)} → ${setpoint.toFixed(1)} → clamped=${clamped}`);
-    return clamped;
+    let target = Math.min(wantA, roomA);
+    if (now < this._holdUntil) {
+      target = Math.max(target, Math.min(this._effectiveResumeA(), roomA));
+    }
+
+    const cur = this._lbSetpointA;
+    if (cur !== null && target > cur) {
+      const ok = this._stableAtLeast('raise', target, cur + RAISE_STEP_A, now);
+      if (!ok || now - this._lastWriteMs < SETTLE_MS) return;
+      target = this._stable.raise.minA;   // laagste waarde uit de afgelopen 60 s
+      this._stable.raise = null;
+    } else {
+      this._stable.raise = null;
+      // Vlak na een wijziging lopen netmeting en laadstroom van de paal nog niet synchroon.
+      // Dan alleen verlagen als de zekering het echt vraagt.
+      if (cur !== null && target < cur && now - this._lastWriteMs < SETTLE_MS && roomA >= cur) return;
+    }
+
+    if (target !== cur) await this._writeSetpoint(target, src);
+  }
+
+  // Houdt bij sinds wanneer 'value' aaneengesloten ≥ 'threshold' is en wat de laagste
+  // waarde in die periode was. Geeft true als dat RAISE_STABLE_MS lang zo is.
+  _stableAtLeast(key, value, threshold, now) {
+    if (value < threshold) { this._stable[key] = null; return false; }
+    const s = this._stable[key];
+    if (!s) { this._stable[key] = { since: now, minA: value }; return false; }
+    s.minA = Math.min(s.minA, value);
+    return now - s.since >= RAISE_STABLE_MS;
+  }
+
+  // Start (of herstart) het laden: minimaal de startstroom, 90 s vasthouden.
+  async _startCharging(wantA, roomA, src) {
+    const minA = this._effectiveMinA();
+    if (roomA < minA) {
+      return this._autoPause(`te weinig ruimte op de zekering bij starten (${roomA} A)`);
+    }
+    const startA = Math.min(Math.max(Math.min(wantA, roomA), this._effectiveResumeA()), roomA);
+    const now = Date.now();
+    this._holdUntil     = now + RESUME_HOLD_MS;
+    this._chargeStartMs = now;
+    this._stable        = { start: null, raise: null };
+    this.log(`Laden starten op ${startA} A (${RESUME_HOLD_MS / 1000} s vasthouden)`);
+    await this._writeSetpoint(startA, src);
+  }
+
+  // Interne pauze: 5 A naar de paal, zonder de pauze-status/triggers van de gebruiker.
+  async _autoPause(reason) {
+    this._holdUntil = 0;
+    this._stable    = { start: null, raise: null };
+    if (!this._autoPaused) {
+      this._autoPaused      = true;
+      this._autoPausedSince = Date.now();
+      this._autoPauseReason = reason;
+      this.log(`Interne pauze: ${reason} — ${PAUSE_CURRENT_A} A naar de paal`);
+    }
+    if (this._lbSetpointA !== PAUSE_CURRENT_A) await this._writeSetpoint(PAUSE_CURRENT_A, 'pause');
+  }
+
+  _clearAutoPause() {
+    this._autoPaused      = false;
+    this._autoPauseReason = null;
+    this._holdUntil       = 0;
+    this._stable          = { start: null, raise: null };
+  }
+
+  async _writeSetpoint(amps, src) {
+    const prev = this._lbSetpointA;
+    await this._writeMaxCurrentRaw(amps);
+    this._lbSetpointA = amps;
+    this._lastWriteMs = Date.now();
+    this._chargerReadMs = 0;   // na een wijziging bij de volgende berekening opnieuw uitlezen
+    await this._setCapSafe('max_current', amps);
+    this.log(`Instelpunt (${src}): ${prev} → ${amps} A`);
   }
 
   async _handleSolarMode() {
-    if (!this._solarModeEnabled) return;
+    if (!this._solarModeEnabled || this._paused) return;   // pauze van de gebruiker gaat voor
+    await this._refreshChargerCurrent();
     const gridPhases = Number(this._settings.grid_phases)       || 3;
-    const cableMax   = Number(this._settings.max_current_limit) || 16;
-    const fuseA      = Number(this._settings.grid_fuse_A)        || 25;
-    const margin     = Number(this._settings.lb_safety_margin_A) ||  1;
 
     let surplusW = 0;
     for (let ph = 1; ph <= gridPhases; ph++) {
@@ -538,68 +709,29 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     const targetA_raw = (targetKw * 1000) / (activePhases * 230);
-    const solarActivelyCharging = isActivelyCharging(this._lastMode3);
-    const solarFallbackA = (solarActivelyCharging && this._lbSetpointA) ? this._lbSetpointA : 0;
-    const chargerA  = {
-      L1: this._chargerCurrentA.L1 > 0 ? this._chargerCurrentA.L1 : solarFallbackA,
-      L2: this._chargerCurrentA.L2 > 0 ? this._chargerCurrentA.L2 : solarFallbackA,
-      L3: this._chargerCurrentA.L3 > 0 ? this._chargerCurrentA.L3 : solarFallbackA,
-    };
-    const avail = phase => {
-      const measured = this._gridCurrentA[phase];
-      if (measured === null) return cableMax;
-      return fuseA - measured + (chargerA[phase] || 0) - margin;
-    };
-    const lbAvail = activePhases === 1
-      ? avail('L1')
-      : Math.min(avail('L1'), avail('L2'), avail('L3'));
-    const lbMax = Math.max(6, Math.min(Math.round(lbAvail), cableMax));
+    const wantA = Math.round(targetA_raw);
+    const { roomA } = this._fuseRoomA(activePhases);
+    const shownA = Math.min(wantA, roomA);
 
-    const target = Math.min(Math.round(targetA_raw), lbMax);
-    const targetTotalKw = (target * activePhases * 230 / 1000).toFixed(1);
+    this.log(`Solar: overschot=${surplusKw.toFixed(1)} kW  minimum=${minimumKw.toFixed(1)} kW  fase=${activePhases}  doel=${shownA} A (${(shownA * activePhases * 230 / 1000).toFixed(1)} kW)  LB-ruimte=${roomA} A`);
 
-    this.log(`Solar: overschot=${surplusKw.toFixed(1)} kW  minimum=${minimumKw.toFixed(1)} kW  fase=${activePhases}  doel=${target} A (${targetTotalKw} kW)  LB-max=${lbMax} A`);
-
-    if (target < 1) {
-      if (!this._paused) {
-        this.log('Solar: doel < 1 A — pauzeer laden');
-        await this._pauseCharging();
-      }
-    } else {
-      const minChangeA = Math.max(1, Math.ceil(500 / (activePhases * 230)));
-      const currentA   = this._paused ? null : this._lbSetpointA;
-      if (!this._paused && currentA !== null && Math.abs(target - currentA) < minChangeA) {
-        this.log(`Solar: doel ${target} A binnen drempel ${minChangeA} A (huidig ${currentA} A) — geen wijziging`);
-        return;
-      }
-      if (this._paused) await this._resumeCharging();
-      await this._writeMaxCurrentRaw(target);
-      await this._setCapSafe('max_current', target);
-      this._lbSetpointA = target;
-      this.log(`Solar: laadvermogen ingesteld op ${target} A (${targetTotalKw} kW)`);
-    }
+    // Pauzeren/hervatten bij te weinig zon gaat via de interne pauze (niet via de
+    // pauze van de gebruiker), met minimale laad- en pauzeduur. Zie _applyTarget.
+    await this._applyTarget(wantA, roomA, 'solar');
   }
 
   async _recalculateAndWrite() {
-    if (!this._socketConnected || this._destroyed) return;
-    let setpoint = this._calculateLbSetpoint();
-    const current = this._lbSetpointA;
-    if (setpoint === current) { this._pendingRaiseA = null; return; }
-    // Verlagen direct (zekering beschermen); verhogen pas na bevestiging door
-    // een tweede berekening, om pendelen te voorkomen. De keepalive verhoogt
-    // in elk geval binnen één LB-interval.
-    if (current !== null && setpoint > current && !this._paused) {
-      const prev = this._pendingRaiseA;
-      this._pendingRaiseA = setpoint;
-      if (prev === null) return;
-      setpoint = Math.min(prev, setpoint);
-      if (setpoint <= current) return;
+    if (!this._socketConnected || this._destroyed || this._paused) return;
+    await this._refreshChargerCurrent();
+    const lim = this._computeLbLimits();
+    if (lim.fallbackA !== undefined) {
+      // Meterdata ontbreekt of is verlopen: bestaand veiligheidsgedrag (≤ 6 A).
+      if (!this._autoPaused && lim.fallbackA !== this._lbSetpointA) {
+        await this._writeSetpoint(lim.fallbackA, 'lb-fallback');
+      }
+      return;
     }
-    this._pendingRaiseA = null;
-    this.log(`LB setpoint: ${this._lbSetpointA} → ${setpoint} A`);
-    this._lbSetpointA = setpoint;
-    await this._writeMaxCurrentRaw(setpoint);
-    await this._setCapSafe('max_current', setpoint);
+    await this._applyTarget(lim.wantA, lim.roomA, 'lb');
   }
 
   async _updateGridCurrent(l1, l2, l3) {
@@ -688,31 +820,32 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     }
 
     if (!this._socketConnected) return;
-    if (this._solarModeEnabled) {
-      if (dataStale || !this._meterHasData) {
-        this.log('Solar keepalive: meterdata verlopen of ontbreekt — pauzeer laden');
-        if (!this._paused) await this._pauseCharging();
-        return;
-      }
-      if (this._lbSetpointA !== null) {
-        try {
-          await this._writeMaxCurrentRaw(this._lbSetpointA);
-          if (LOG) this.log(`Solar keepalive schreef ${this._lbSetpointA} A`);
-        } catch (err) {
-          this.log(`Solar keepalive schrijffout: ${err.message}`);
-        }
-      }
-      return;
-    }
-    const setpoint = this._calculateLbSetpoint();
-    this._lbSetpointA   = setpoint;
-    this._pendingRaiseA = null;
     try {
-      await this._writeMaxCurrentRaw(setpoint);
-      await this._setCapSafe('max_current', setpoint);
-      if (LOG) this.log(`LB keepalive wrote ${setpoint} A`);
+      if (this._paused) {
+        // Pauze van de gebruiker: alleen 5 A herhalen (hieronder)
+        if (this._lbSetpointA === null) this._lbSetpointA = PAUSE_CURRENT_A;
+      } else if (this._solarModeEnabled) {
+        if (dataStale || !this._meterHasData) {
+          await this._autoPause('zonneladen: meterdata verlopen of ontbreekt');
+        } else {
+          await this._handleSolarMode();   // tijdregels (pauze-/laadduur) ook zonder meter-events
+        }
+      } else {
+        await this._recalculateAndWrite();
+      }
     } catch (err) {
-      this.log(`LB keepalive write failed: ${err.message}`);
+      this.log(`Keepalive berekening mislukt: ${err.message}`);
+    }
+
+    // Alfen valt na 60 s zonder schrijfactie terug op safe current: instelpunt herhalen.
+    // Dit herhaalt alleen de bestaande waarde, het is geen nieuwe beslissing.
+    const a = (this._paused || this._autoPaused) ? PAUSE_CURRENT_A : this._lbSetpointA;
+    if (a === null || Date.now() - this._lastWriteMs < 2000) return;
+    try {
+      await this._writeMaxCurrentRaw(a);
+      if (LOG) this.log(`Keepalive herhaalde ${a} A`);
+    } catch (err) {
+      this.log(`Keepalive schrijffout: ${err.message}`);
     }
   }
 
@@ -876,6 +1009,12 @@ module.exports = class AlfenAceDevice extends Homey.Device {
           this.log('Car disconnected');
           this.homey.flow.getDeviceTriggerCard('car_disconnected').trigger(this).catch(this.error.bind(this));
           this.log('Car disconnected: clearing pause and solar charging');
+          if (this._autoPaused) {
+            this._clearAutoPause();
+            this._lbSetpointA = null;   // volgende berekening schrijft direct een nieuw instelpunt
+          }
+          this._holdUntil     = 0;
+          this._chargeStartMs = 0;
           if (this._paused) {
             this._paused = false;
             this._prePauseSetpointA = null;
@@ -956,6 +1095,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       await this._setCapSafe('charger_current_l2', cL2);
       await this._setCapSafe('charger_current_l3', cL3);
       this._chargerCurrentA = { L1: cL1, L2: cL2, L3: cL3 };
+      this._chargerReadMs   = Date.now();
     }
 
     if (m.power) {
@@ -1040,14 +1180,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   async _pauseCharging() {
     if (this._paused) return;
-    this._prePauseSetpointA = this._lbSetpointA;
+    // Tijdens een interne pauze staat het instelpunt op 5 A: dat is geen bruikbare waarde om naar terug te keren.
+    this._prePauseSetpointA = (this._lbSetpointA !== null && this._lbSetpointA > PAUSE_CURRENT_A)
+      ? this._lbSetpointA : null;
     this._paused            = true;
     this._chargingPaused    = true;
+    this._clearAutoPause();   // de pauze van de gebruiker neemt het over
     await this._setCapSafe('charging_paused', true);
     this.log('Pause state changed: ON');
     if (this._socketConnected) {
       await this._writeMaxCurrentRaw(PAUSE_CURRENT_A);
       await this._setCapSafe('max_current', PAUSE_CURRENT_A);
+      this._lastWriteMs = Date.now();
     }
     this._lbSetpointA = PAUSE_CURRENT_A;
     await this._setCapSafe('evcharger_charging', false);
@@ -1072,16 +1216,24 @@ module.exports = class AlfenAceDevice extends Homey.Device {
       }
     }
     this._prePauseSetpointA = null;
+    // Hervatten: minimaal de startstroom (8 A) en die 90 s vasthouden, zodat de auto
+    // na een lange pauze rustig kan opstarten (voorkomt HFSwitching / fout 303).
+    this._clearAutoPause();
     if (this._socketConnected) {
       if (this._solarModeEnabled) {
-        const setpoint = this._lbSetpointA !== null ? this._lbSetpointA : 6;
-        await this._writeMaxCurrentRaw(setpoint);
-        await this._setCapSafe('max_current', setpoint);
+        const phases  = this._activeChargePhases || Number(this._settings.grid_phases) || 3;
+        const { roomA } = this._fuseRoomA(phases);
+        const wantA   = this._lbSetpointA !== null && this._lbSetpointA > PAUSE_CURRENT_A
+          ? this._lbSetpointA : this._effectiveResumeA();
+        await this._startCharging(wantA, roomA, 'hervat (zon)');
       } else {
-        const setpoint = this._calculateLbSetpoint();
-        this._lbSetpointA = setpoint;
-        await this._writeMaxCurrentRaw(setpoint);
-        await this._setCapSafe('max_current', setpoint);
+        await this._refreshChargerCurrent();
+        const lim = this._computeLbLimits();
+        if (lim.fallbackA !== undefined) {
+          await this._writeSetpoint(lim.fallbackA, 'hervat (fallback)');
+        } else {
+          await this._startCharging(lim.wantA, lim.roomA, 'hervat');
+        }
       }
     }
     await this._setCapSafe('evcharger_charging', isActivelyCharging(this._lastMode3));
@@ -1129,6 +1281,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
         excerpt: this.homey.__('notifications.solar_mode_disabled_by_slider', { amps }),
       }).catch(err => this.log('Notification error:', err.message));
     }
+    const wasPaused = this._paused || this._autoPaused;
     if (this._paused) {
       this.log(`Direct current command (${amps} A) clears pause state`);
       this._paused            = false;
@@ -1143,6 +1296,9 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._writeMaxCurrentRaw(amps);
     this._lbSetpointA = amps;
     this._userMaxA    = amps;
+    this._lastWriteMs = Date.now();
+    this._clearAutoPause();   // expliciete keuze van de gebruiker
+    if (wasPaused) this._chargeStartMs = Date.now();
     this.setStoreValue('userMaxA', amps).catch(err => this.log('setStoreValue userMaxA err:', err.message));
     await this.delay(300);
     const res = await this._clientSocket1.readHoldingRegisters(REG_MAX_CURRENT_RW, 2);

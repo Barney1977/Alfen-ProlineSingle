@@ -206,6 +206,28 @@
       "value": 1
     },
     {
+      "id": "min_charge_current",
+      "type": "number",
+      "label": {
+        "en": "Minimum charge current (A)",
+        "nl": "Minimale laadstroom (A)"
+      },
+      "hint": {
+        "en": "Lowest current the app will charge at. Below this (not enough room on the main fuse, or not enough sun) the app pauses charging internally and only restarts after at least 5 minutes, when at least 8 A has been available for 60 s. Some cars charge unstably at 6 A; 7 A is a safe default. A lower maximum you set yourself is always respected.",
+        "nl": "Laagste stroom waarop de app laat laden. Daaronder (te weinig ruimte op de hoofdzekering of te weinig zon) pauzeert de app intern en start pas weer na minimaal 5 minuten, als er 60 s lang minstens 8 A beschikbaar is. Sommige auto's laden onrustig op 6 A; 7 A is een veilige standaard. Een lager maximum dat je zelf instelt wordt altijd gerespecteerd."
+      },
+      "value": 7,
+      "units": {
+        "en": "A",
+        "nl": "A"
+      },
+      "attr": {
+        "min": 6,
+        "max": 16,
+        "step": 1
+      }
+    },
+    {
       "id": "single_phase_solar",
       "type": "checkbox",
       "label": {
