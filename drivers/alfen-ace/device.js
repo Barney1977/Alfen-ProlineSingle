@@ -24,6 +24,11 @@ const RAISE_STABLE_MS       = 60 * 1000;        // ... die zo lang aaneengeslote
 const SETTLE_MS             = 15 * 1000;        // na een wijziging: auto tijd geven om bij te regelen
 const AUTO_PAUSE_MIN_MS     = 60 * 1000;        // minimale duur interne pauze
 const CHARGE_MIN_MS         = 60 * 1000;        // minimale laadduur voordat zonneladen mag pauzeren
+const RAISE_BACKOFF_STABLE_MS = 5 * 60 * 1000;  // na een recente verlaging: zo lang stabiel voor verhogen
+const RAISE_BACKOFF_WINDOW_MS = 10 * 60 * 1000; // ... als de laatste verlaging korter dan dit geleden is
+const DRAWING_MIN_A         =  1;
+const SPIKE_TOLERANCE_A     =  2;               // overschrijding tot zoveel A boven de ruimte ...
+const SPIKE_CONFIRM_MS      = 15 * 1000;        // ... pas corrigeren als die zo lang aanhoudt               // auto neemt af als de laadstroom op een fase ≥ deze waarde is
 const CHARGER_READ_MAX_AGE_MS = 2 * 1000;       // laadstroom paal verversen als ouder dan dit
 
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
@@ -156,6 +161,8 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     this._holdUntil             = 0;      // tot wanneer de startstroom wordt vastgehouden
     this._chargeStartMs         = 0;      // start van de huidige laadperiode
     this._lastWriteMs           = 0;      // laatste wijziging van het instelpunt
+    this._lastLowerMs           = 0;      // laatste verlaging tijdens het laden (voor trager verhogen)
+    this._overSince             = null;   // sinds wanneer de ruimte (licht) onder het instelpunt ligt
     this._chargerReadMs         = 0;      // laatste uitlezing laadstroom paal
     this._stable                = { start: null, raise: null };
 
@@ -563,10 +570,28 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   //   - zondoel < minimum → eerst minimale laadduur afmaken, dan interne pauze
   //   - na (her)start 90 s de startstroom vasthouden (alleen omlaag voor de zekering)
   //   - omlaag direct, omhoog pas na 60 s stabiel ≥ 2 A extra en 15 s na de vorige wijziging
+  //   - omhoog alleen als de auto daadwerkelijk stroom afneemt
+  //   - na een verlaging (< 10 min geleden) pas omhoog na 5 min stabiele ruimte
+  //   - kleine overschrijding (≤ 2 A) pas na 15 s corrigeren, grotere direct
   async _applyTarget(wantA, roomA, src) {
     if (this._paused || !this._socketConnected || this._destroyed) return;
     const now  = Date.now();
     const minA = this._effectiveMinA();
+
+    // Korte, kleine pieken negeren: ligt de ruimte maximaal 2 A onder het huidige instelpunt,
+    // dan pas verlagen/pauzeren als dat 15 s aanhoudt. Een grotere overschrijding direct.
+    // De veiligheidsmarge (lb_safety_margin_A) zit al in roomA, en een hoofdzekering kan een
+    // kleine overbelasting van enkele seconden ruim hebben.
+    const curA = (!this._autoPaused && this._lbSetpointA !== null && this._lbSetpointA > PAUSE_CURRENT_A)
+      ? this._lbSetpointA : null;
+    if (curA !== null && roomA < curA) {
+      if (curA - roomA <= SPIKE_TOLERANCE_A) {
+        if (this._overSince === null) this._overSince = now;
+        if (now - this._overSince < SPIKE_CONFIRM_MS) return;
+      }
+    } else {
+      this._overSince = null;
+    }
 
     if (roomA < minA) {
       return this._autoPause(`te weinig ruimte op de zekering (${roomA} A)`);
@@ -600,7 +625,14 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
     const cur = this._lbSetpointA;
     if (cur !== null && target > cur) {
-      const ok = this._stableAtLeast('raise', target, cur + RAISE_STEP_A, now);
+      // Neemt de auto niets af (vol, of pauze door de auto), dan heeft verhogen geen effect:
+      // niet doen. Verlagen blijft wel direct, zodat het instelpunt veilig staat als de auto
+      // weer gaat laden. Gaat de auto laden, dan verhoogt de normale regel vanzelf.
+      if (!this._isDrawing() && now >= this._holdUntil) { this._stable.raise = null; return; }
+      // Na een recente verlaging trager verhogen (voorkomt pendelen rond de grens).
+      const stableMs = (now - this._lastLowerMs < RAISE_BACKOFF_WINDOW_MS)
+        ? RAISE_BACKOFF_STABLE_MS : RAISE_STABLE_MS;
+      const ok = this._stableAtLeast('raise', target, cur + RAISE_STEP_A, now, stableMs);
       if (!ok || now - this._lastWriteMs < SETTLE_MS) return;
       target = this._stable.raise.minA;   // laagste waarde uit de afgelopen 60 s
       this._stable.raise = null;
@@ -616,12 +648,18 @@ module.exports = class AlfenAceDevice extends Homey.Device {
 
   // Houdt bij sinds wanneer 'value' aaneengesloten ≥ 'threshold' is en wat de laagste
   // waarde in die periode was. Geeft true als dat RAISE_STABLE_MS lang zo is.
-  _stableAtLeast(key, value, threshold, now) {
+  _stableAtLeast(key, value, threshold, now, durationMs = RAISE_STABLE_MS) {
     if (value < threshold) { this._stable[key] = null; return false; }
     const s = this._stable[key];
     if (!s) { this._stable[key] = { since: now, minA: value }; return false; }
     s.minA = Math.min(s.minA, value);
-    return now - s.since >= RAISE_STABLE_MS;
+    return now - s.since >= durationMs;
+  }
+
+  // Neemt de auto op dit moment stroom af? (laadstroom van de paal, max. 2 s oud)
+  _isDrawing() {
+    const c = this._chargerCurrentA;
+    return Math.max(c.L1 || 0, c.L2 || 0, c.L3 || 0) >= DRAWING_MIN_A;
   }
 
   // Start (of herstart) het laden: minimaal de startstroom, 90 s vasthouden.
@@ -642,6 +680,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   // Interne pauze: 5 A naar de paal, zonder de pauze-status/triggers van de gebruiker.
   async _autoPause(reason) {
     this._holdUntil = 0;
+    this._overSince = null;
     this._stable    = { start: null, raise: null };
     if (!this._autoPaused) {
       this._autoPaused      = true;
@@ -653,6 +692,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   }
 
   _clearAutoPause() {
+    this._overSince       = null;
     this._autoPaused      = false;
     this._autoPauseReason = null;
     this._holdUntil       = 0;
@@ -664,6 +704,10 @@ module.exports = class AlfenAceDevice extends Homey.Device {
     await this._writeMaxCurrentRaw(amps);
     this._lbSetpointA = amps;
     this._lastWriteMs = Date.now();
+    // Verlaging tijdens het laden onthouden (geen pauze/hervat), voor trager verhogen daarna.
+    if (prev !== null && prev > PAUSE_CURRENT_A && amps > PAUSE_CURRENT_A && amps < prev) {
+      this._lastLowerMs = this._lastWriteMs;
+    }
     this._chargerReadMs = 0;   // na een wijziging bij de volgende berekening opnieuw uitlezen
     await this._setCapSafe('max_current', amps);
     this.log(`Instelpunt (${src}): ${prev} → ${amps} A`);
