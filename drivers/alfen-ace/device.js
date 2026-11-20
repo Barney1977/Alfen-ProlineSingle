@@ -22,8 +22,8 @@ const RESUME_HOLD_MS        = 90 * 1000;        // startstroom zo lang vasthoude
 const RAISE_STEP_A          =  2;               // verhogen pas bij minimaal deze ruimte extra
 const RAISE_STABLE_MS       = 60 * 1000;        // ... die zo lang aaneengesloten aanwezig is
 const SETTLE_MS             = 15 * 1000;        // na een wijziging: auto tijd geven om bij te regelen
-const AUTO_PAUSE_MIN_MS     =  5 * 60 * 1000;   // minimale duur interne pauze
-const CHARGE_MIN_MS         =  5 * 60 * 1000;   // minimale laadduur voordat zonneladen mag pauzeren
+const AUTO_PAUSE_MIN_MS     = 60 * 1000;        // minimale duur interne pauze
+const CHARGE_MIN_MS         = 60 * 1000;        // minimale laadduur voordat zonneladen mag pauzeren
 const CHARGER_READ_MAX_AGE_MS = 2 * 1000;       // laadstroom paal verversen als ouder dan dit
 
 // ─── Alfen Modbus server addresses ───────────────────────────────────────────
@@ -559,7 +559,7 @@ module.exports = class AlfenAceDevice extends Homey.Device {
   //   roomA = ruimte op de hoofdzekering
   // Regels:
   //   - ruimte < minimum → interne pauze (5 A), de zekering gaat altijd voor
-  //   - interne pauze eindigt pas na 5 min én 60 s stabiel ≥ startstroom
+  //   - interne pauze eindigt pas na 1 min én 60 s stabiel ≥ startstroom
   //   - zondoel < minimum → eerst minimale laadduur afmaken, dan interne pauze
   //   - na (her)start 90 s de startstroom vasthouden (alleen omlaag voor de zekering)
   //   - omlaag direct, omhoog pas na 60 s stabiel ≥ 2 A extra en 15 s na de vorige wijziging
