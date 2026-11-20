@@ -75,5 +75,8 @@
   },
   "1.3.8": {
     "en": "smoother charging: resume at a minimum 8A"
+  },
+  "1.3.9": {
+    "en": "pause and minimum charge time 1 minute"
   }
 }
